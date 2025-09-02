@@ -18,11 +18,14 @@ return new class extends Migration
             $table->string("phone_number")->nullable();
             $table->string('email')->unique();
             $table->string('password');
-            $table->string("profile_img")->nullable();
+            $table->string("user_img")->nullable();
             $table->enum("role",['user','owner','admin'])->default('user');
             $table->decimal("latitude",10,8)->nullable();
             $table->decimal("longitude",11,8)->nullable();
-            $table->string("address")->nullable();
+            $table->foreignId("region_id")->nullable()->constrained("regions")->cascadeOnDelete();
+            $table->foreignId("province_id")->nullable()->constrained("provinces")->cascadeOnDelete();
+            $table->foreignId("muncity_id")->nullable()->constrained("muncities")->cascadeOnDelete();
+            $table->foreignId("barangay_id")->nullable()->constrained("barangays")->cascadeOnDelete();
             $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();
             $table->timestamps();

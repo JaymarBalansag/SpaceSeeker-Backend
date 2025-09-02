@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Requests\AuthRequest;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
 use App\Http\Requests\RegisterRequest;
@@ -109,11 +110,14 @@ class AuthController extends Controller
                 false,
                 'Lax'
             );
+
+            $createdUser = DB::table('users')->where('email', $validated["email"])->first();
+
             return response()->json([
                 'access_token' => $accessToken,
                 'token_type' => 'Bearer',
                 'expires_in' => 900, // 15 mins
-                'user' => $user
+                'user' => $createdUser
             ])->cookie($cookie);
         }
         else {

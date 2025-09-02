@@ -12,11 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('street')->nullable()->after('longitude');
-            $table->string('barangay')->nullable()->after('street');
-            $table->string('city_municipality')->nullable()->after('barangay');
-            $table->string('province')->nullable()->after('city_municipality');
-            $table->string('region')->nullable()->after('province');
+            $table->boolean('isComplete')->default(false)->after('password');
         });
     }
 
