@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\PaymentController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\api\AuthController;
@@ -14,20 +15,31 @@ Route::controller(AuthController::class)->group(function(){
 });
 
 Route::middleware("auth:sanctum")->group(function(){
+
+
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
+
+
     Route::controller(AuthController::class)->group(function(){
         Route::post("/logout", "logout");
     });
+
     Route::controller(PropertyController::class)->group(function(){
         Route::post("/is-subscribing", "isSubscribing");
     });
+
+    Route::controller(PaymentController::class)->group(function() {
+        Route::post("/paymentConfirmation", 'confirm');
+    });
+
+    Route::controller(LocationController::class)->group(function(){
+        Route::get("/regions", "getRegions"); // Get all regions
+        Route::get("/provinces/{region_code}", "getProvinces"); // Get provinces by region
+        Route::get("/municities/{province_code}", "getMunCities"); // Get municipalities by province
+        Route::get("/barangays/{muncity_code}", "getBarangays"); // Get barangays by municipality
+    });
+    
 });
 
-Route::controller(LocationController::class)->group(function(){
-    Route::get("/regions", "getRegions"); // Get all regions
-    Route::get("/provinces/{region_code}", "getProvinces"); // Get provinces by region
-    Route::get("/municities/{province_code}", "getMunCities"); // Get municipalities by province
-    Route::get("/barangays/{muncity_code}", "getBarangays"); // Get barangays by municipality
-});
