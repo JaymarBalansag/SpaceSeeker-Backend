@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\isSubscribingRequest;
+use Illuminate\Support\Facades\Auth;
 
 class PropertyController extends Controller
 {
@@ -37,4 +38,201 @@ class PropertyController extends Controller
         ], 200);
 
     }
+
+    public function getAmenities(){
+        $amenities = DB::table("amenities")->get();
+        return response()->json([
+            "amenities" => $amenities
+        ], 200);
+    }
+
+    public function getFacilities(){
+        $facilities = DB::table("facilities")->get();
+        return response()->json([
+            "facilities" => $facilities
+        ], 200);
+    }
+
+    public function getPropertyTypes(){
+        $types = DB::table("property_types")->get();
+        return response()->json([
+            "types" => $types
+        ],200);
+    }
+
+    // CRUD for Properties
+
+    // Create Property
+    // Create Property with Images
+    // Create Property with Images
+    public function createProperty(Request $request)
+{
+    // Validate the request
+    $request->validate([
+        'title' => 'required|string|max:255',
+        'description' => 'nullable|string',
+        'price' => 'required|numeric',
+        'utilities_included' => 'required|boolean',
+        'agreement_type' => 'required|in:rental,lease',
+        'property_type_id' => 'required|exists:property_types,id',
+        'furnishing' => 'nullable|in:unfurnished,semi-furnished,fully-furnished',
+        'parking' => 'required|boolean',
+        'latitude' => 'nullable|numeric',
+        'longitude' => 'nullable|numeric',
+        'region_id' => 'nullable|exists:regions,id',
+        'province_id' => 'nullable|exists:provinces,id',
+        'muncity_id' => 'nullable|exists:muncities,id',
+        'barangay_id' => 'nullable|exists:barangays,id',
+        'thumbnail' => 'nullable|file|mimes:jpg,jpeg,png',
+        'images' => 'nullable|array',
+        'images.*' => 'file|mimes:jpg,jpeg,png',
+    ]);
+
+    // Get the currently authenticated user
+    $user = Auth::user();  // This returns the full user model
+
+    // Insert the property data into the `properties` table
+    $propertyId = DB::table('properties')->insertGetId([
+        'owner_id' => $user->id, // Get the authenticated user's ID
+        'title' => $request->title,
+        'description' => $request->description,
+        'price' => $request->price,
+        'utilities_included' => $request->utilities_included,
+        'agreement_type' => $request->agreement_type,
+        'advance_payment_months' => $request->advance_payment_months ?? 0,
+        'deposit_required' => $request->deposit_required,
+        'payment_frequency' => $request->payment_frequency ?? 'monthly',
+        'property_type_id' => $request->property_type_id,
+        'furnishing' => $request->furnishing,
+        'parking' => $request->parking,
+        'latitude' => $request->latitude,
+        'longitude' => $request->longitude,
+        'region_id' => $request->region_id,
+        'province_id' => $request->province_id,
+        'muncity_id' => $request->muncity_id,
+        'barangay_id' => $request->barangay_id,
+        'rules' => $request->rules,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    // Save the thumbnail image (if exists)
+    if ($request->hasFile('thumbnail')) {
+        $thumbnail = $request->file('thumbnail')->store('thumbnails');
+        DB::table('properties')->where('id', $propertyId)->update(['thumbnail' => $thumbnail]);
+    }
+
+    // Save property images (multiple) in the `property_images` table
+    if ($request->hasFile('images')) {
+        foreach ($request->file('images') as $image) {
+            $imagePath = $image->store('property_images');
+            DB::table('property_images')->insert([
+                'property_id' => $propertyId,
+                'image_path' => $imagePath,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+    }
+
+    return response()->json([
+        'property_id' => $propertyId,
+        'message' => 'Property created successfully',
+    ], 201);
+}
+    
+    // Show Property with Images
+    public function showProperty($id)
+    {
+        $property = DB::table('properties')
+            ->join('owners', 'properties.owner_id', '=', 'owners.id')
+            ->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
+            ->join('regions', 'properties.region_id', '=', 'regions.id')
+            ->join('provinces', 'properties.province_id', '=', 'provinces.id')
+            ->join('muncities', 'properties.muncity_id', '=', 'muncities.id')
+            ->join('barangays', 'properties.barangay_id', '=', 'barangays.id')
+            ->select(
+                'properties.*',
+                'owners.first_name as owner_first_name',
+                'owners.last_name as owner_last_name',
+                'property_types.type_name as property_type',
+                'regions.reg_desc as region',
+                'provinces.prov_desc as province',
+                'muncities.muncity_desc as muncity',
+                'barangays.brgy_desc as barangay'
+            )
+            ->where('properties.id', '=', $id)
+            ->first();
+
+        // Get associated images for the property
+        $images = DB::table('property_images')->where('property_id', $id)->get();
+
+        return response()->json([
+            'property' => $property,
+            'images' => $images,
+        ]);
+    }
+
+    // Update Property
+    public function updateProperty(Request $request, $id)
+    {
+        $request->validate([
+            'title' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'price' => 'required|numeric',
+            'utilities_included' => 'required|boolean',
+            'agreement_type' => 'required|in:rental,lease',
+            'property_type_id' => 'required|exists:property_types,id',
+            'furnishing' => 'nullable|in:unfurnished,semi-furnished,fully-furnished',
+            'parking' => 'required|boolean',
+            'latitude' => 'nullable|numeric',
+            'longitude' => 'nullable|numeric',
+            'region_id' => 'nullable|exists:regions,id',
+            'province_id' => 'nullable|exists:provinces,id',
+            'muncity_id' => 'nullable|exists:muncities,id',
+            'barangay_id' => 'nullable|exists:barangays,id',
+        ]);
+
+        DB::table('properties')
+            ->where('id', $id)
+            ->update([
+                'title' => $request->title,
+                'description' => $request->description,
+                'price' => $request->price,
+                'utilities_included' => $request->utilities_included,
+                'agreement_type' => $request->agreement_type,
+                'advance_payment_months' => $request->advance_payment_months ?? 0,
+                'deposit_required' => $request->deposit_required,
+                'payment_frequency' => $request->payment_frequency ?? 'monthly',
+                'property_type_id' => $request->property_type_id,
+                'furnishing' => $request->furnishing,
+                'parking' => $request->parking,
+                'bedrooms' => $request->bedrooms,
+                'bathrooms' => $request->bathrooms,
+                'bed_space' => $request->bed_space,
+                'floor_area' => $request->floor_area,
+                'lot_area' => $request->lot_area,
+                'max_size' => $request->max_size,
+                'latitude' => $request->latitude,
+                'longitude' => $request->longitude,
+                'region_id' => $request->region_id,
+                'province_id' => $request->province_id,
+                'muncity_id' => $request->muncity_id,
+                'barangay_id' => $request->barangay_id,
+                'rules' => $request->rules,
+                'updated_at' => now(),
+            ]);
+
+        return response()->json(['id' => $id], 200);
+    }
+
+    // Delete Property
+    public function deleteProperty($id)
+    {
+        DB::table('properties')->where('id', $id)->delete();
+
+        return response()->json(null, 204);
+    }
+
+    
 }

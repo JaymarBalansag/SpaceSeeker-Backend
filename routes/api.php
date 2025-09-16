@@ -28,6 +28,17 @@ Route::middleware("auth:sanctum")->group(function(){
 
     Route::controller(PropertyController::class)->group(function(){
         Route::post("/is-subscribing", "isSubscribing");
+        Route::get("/amenities", "getAmenities");
+        Route::get("/facilities", "getFacilities");
+        Route::get("/property_types", "getPropertyTypes");
+
+        // Property CRUD
+
+        Route::post('/properties', 'createProperty');
+        Route::get('/properties/{id}', 'showProperty');
+        Route::put('/properties/{id}', 'updateProperty');
+        Route::delete('/properties/{id}', 'deleteProperty');
+
     });
 
     Route::controller(PaymentController::class)->group(function() {
