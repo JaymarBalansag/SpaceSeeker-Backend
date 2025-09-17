@@ -68,7 +68,7 @@ return new class extends Migration
             $table->integer("bedrooms")->nullable();   // For house/apt/condo
             $table->integer("bathrooms")->nullable();  // All except maybe bare rooms
             $table->integer("bed_space")->nullable();  // Specifically for boarding houses
-
+            
             $table->decimal("floor_area", 8, 2)->nullable(); // sqm, apt/condo/house/commercial
             $table->decimal("lot_area", 8, 2)->nullable();   // sqm, house/land/commercial
 

@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use Illuminate\Http\Request;
+use PhpParser\Builder\Property;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\isSubscribingRequest;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Requests\PropertyRequest;
+use App\Http\Requests\isSubscribingRequest;
 
 class PropertyController extends Controller
 {
@@ -65,111 +67,142 @@ class PropertyController extends Controller
     // Create Property
     // Create Property with Images
     // Create Property with Images
-    public function createProperty(Request $request)
-{
-    // Validate the request
-    $request->validate([
-        'title' => 'required|string|max:255',
-        'description' => 'nullable|string',
-        'price' => 'required|numeric',
-        'utilities_included' => 'required|boolean',
-        'agreement_type' => 'required|in:rental,lease',
-        'property_type_id' => 'required|exists:property_types,id',
-        'furnishing' => 'nullable|in:unfurnished,semi-furnished,fully-furnished',
-        'parking' => 'required|boolean',
-        'latitude' => 'nullable|numeric',
-        'longitude' => 'nullable|numeric',
-        'region_id' => 'nullable|exists:regions,id',
-        'province_id' => 'nullable|exists:provinces,id',
-        'muncity_id' => 'nullable|exists:muncities,id',
-        'barangay_id' => 'nullable|exists:barangays,id',
-        'thumbnail' => 'nullable|file|mimes:jpg,jpeg,png',
-        'images' => 'nullable|array',
-        'images.*' => 'file|mimes:jpg,jpeg,png',
-    ]);
+    public function createProperty(PropertyRequest $request)
+    {
+        // dd($request->all());
+        $validated = $request->validated();
 
-    // Get the currently authenticated user
-    $user = Auth::user();  // This returns the full user model
+        DB::beginTransaction();
 
-    // Insert the property data into the `properties` table
-    $propertyId = DB::table('properties')->insertGetId([
-        'owner_id' => $user->id, // Get the authenticated user's ID
-        'title' => $request->title,
-        'description' => $request->description,
-        'price' => $request->price,
-        'utilities_included' => $request->utilities_included,
-        'agreement_type' => $request->agreement_type,
-        'advance_payment_months' => $request->advance_payment_months ?? 0,
-        'deposit_required' => $request->deposit_required,
-        'payment_frequency' => $request->payment_frequency ?? 'monthly',
-        'property_type_id' => $request->property_type_id,
-        'furnishing' => $request->furnishing,
-        'parking' => $request->parking,
-        'latitude' => $request->latitude,
-        'longitude' => $request->longitude,
-        'region_id' => $request->region_id,
-        'province_id' => $request->province_id,
-        'muncity_id' => $request->muncity_id,
-        'barangay_id' => $request->barangay_id,
-        'rules' => $request->rules,
-        'created_at' => now(),
-        'updated_at' => now(),
-    ]);
+        try {
+            // Handle thumbnail
+            $thumbnailPath = null;
+            if ($request->hasFile('thumbnail')) {
+                $thumbnailPath = $request->file('thumbnail')->store('property_thumbnails', 'public');
+            }
 
-    // Save the thumbnail image (if exists)
-    if ($request->hasFile('thumbnail')) {
-        $thumbnail = $request->file('thumbnail')->store('thumbnails');
-        DB::table('properties')->where('id', $propertyId)->update(['thumbnail' => $thumbnail]);
-    }
-
-    // Save property images (multiple) in the `property_images` table
-    if ($request->hasFile('images')) {
-        foreach ($request->file('images') as $image) {
-            $imagePath = $image->store('property_images');
-            DB::table('property_images')->insert([
-                'property_id' => $propertyId,
-                'image_path' => $imagePath,
+            // Insert property
+            $propertyId = DB::table('properties')->insertGetId([
+                'owner_id' => Auth::id(),
+                'title' => $validated['title'],
+                'thumbnail' => $thumbnailPath, // only store relative path
+                'description' => $validated['description'],
+                'price' => $validated['price'],
+                'utilities_included' => $validated['utilities_included'],
+                'agreement_type' => $validated['agreement_type'],
+                'advance_payment_months' => $validated['advance_payment'],
+                'deposit_required' => $validated['deposit_required'],
+                'payment_frequency' => $validated['payment_frequency'],
+                'property_type_id' => $validated['property_type_id'],
+                'furnishing' => $validated['furnishing'],
+                'parking' => $validated['parking'],
+                'is_available' => false,
+                'bedrooms' => $validated['bedrooms'],
+                'bathrooms' => $validated['bathrooms'],
+                'bed_space' => $validated['bed_space'],
+                'floor_area' => $validated['floor_area'],
+                'lot_area' => $validated['lot_area'],
+                'max_size' => $validated['max_size'],
+                'latitude' => $validated['latitude'],
+                'longitude' => $validated['longitude'],
+                'region_id' => $validated['region_id'],
+                'province_id' => $validated['province_id'],
+                'muncity_id' => $validated['muncity_id'],
+                'barangay_id' => $validated['barangay_id'],
+                'rules' => $validated['rules'],
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            // Save property images
+            $savedImages = [];
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $image) {
+                    $imagePath = $image->store('property_images', 'public');
+                    DB::table('property_images')->insert([
+                        'property_id' => $propertyId,
+                        'img_path' => $imagePath,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $savedImages[] = asset('storage/' . $imagePath); // full URL
+                }
+            }
+
+            // Save amenities
+            if ($request->has('property_amenities')) {
+                foreach ($validated['property_amenities'] as $amenityId) {
+                    DB::table('property_amenities')->insert([
+                        'property_id' => $propertyId,
+                        'amenity_id' => $amenityId,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            // Save facilities
+            if ($request->has('property_facilities')) {
+                foreach ($validated['property_facilities'] as $facilityId) {
+                    DB::table('property_facilities')->insert([
+                        'property_id' => $propertyId,
+                        'facility_id' => $facilityId,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Property created successfully!',
+                'property_id' => $propertyId,
+                'thumbnail_url' => $thumbnailPath ? asset('storage/' . $thumbnailPath) : null,
+                'images' => $savedImages,
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Error creating property: ' . $e->getMessage(),
+            ], 500);
         }
     }
 
-    return response()->json([
-        'property_id' => $propertyId,
-        'message' => 'Property created successfully',
-    ], 201);
-}
+
     
-    // Show Property with Images
+    // Show a property
     public function showProperty($id)
     {
+        // Fetch property, amenities, and facilities using DB queries
         $property = DB::table('properties')
-            ->join('owners', 'properties.owner_id', '=', 'owners.id')
-            ->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
-            ->join('regions', 'properties.region_id', '=', 'regions.id')
-            ->join('provinces', 'properties.province_id', '=', 'provinces.id')
-            ->join('muncities', 'properties.muncity_id', '=', 'muncities.id')
-            ->join('barangays', 'properties.barangay_id', '=', 'barangays.id')
-            ->select(
-                'properties.*',
-                'owners.first_name as owner_first_name',
-                'owners.last_name as owner_last_name',
-                'property_types.type_name as property_type',
-                'regions.reg_desc as region',
-                'provinces.prov_desc as province',
-                'muncities.muncity_desc as muncity',
-                'barangays.brgy_desc as barangay'
-            )
-            ->where('properties.id', '=', $id)
+            ->where('id', $id)
             ->first();
 
-        // Get associated images for the property
-        $images = DB::table('property_images')->where('property_id', $id)->get();
+        $images = DB::table('property_images')
+            ->where('property_id', $id)
+            ->get();
 
+        $amenities = DB::table('property_amenities')
+            ->where('property_id', $id)
+            ->join('amenities', 'property_amenities.amenity_id', '=', 'amenities.id')
+            ->select('amenities.amenity_name')
+            ->get();
+
+        $facilities = DB::table('property_facilities')
+            ->where('property_id', $id)
+            ->join('facilities', 'property_facilities.facility_id', '=', 'facilities.id')
+            ->select('facilities.facility_name')
+            ->get();
+
+        // Return the property details along with related data
         return response()->json([
             'property' => $property,
             'images' => $images,
+            'amenities' => $amenities,
+            'facilities' => $facilities,
         ]);
     }
 
