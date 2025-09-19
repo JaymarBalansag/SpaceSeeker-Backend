@@ -33,7 +33,7 @@ class PropertyRequest extends FormRequest
             'advance_payment_months' => 'nullable|integer|min:0',
             'deposit_required' => 'nullable|numeric|min:0',
             'payment_frequency' => 'required|in:daily,weekly,monthly,yearly',
-            'lease_term_months' => 'nullable|integer|min:1',
+            'lease_term_months' => 'nullable|integer',
             'renewal_option' => 'nullable|string',
             'notice_period' => 'nullable|integer|min:0',
             'has_curfew' => 'nullable|boolean',

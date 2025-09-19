@@ -1,6 +1,6 @@
 <?php
 
-namespace app\Services;
+namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -12,9 +12,13 @@ class PropertyService
         DB::beginTransaction();
 
         try {
+
+            $ownerid = DB::table("owners")->where("user_id", '=', Auth::id())->first();
+
+
             // Insert property
             $propertyId = DB::table('properties')->insertGetId([
-                'owner_id' => Auth::id(),
+                'owner_id' => $ownerid->id,
                 'title' => $validated['title'],
                 'thumbnail' => $thumbnail,
                 'description' => $validated['description'] ?? null,
