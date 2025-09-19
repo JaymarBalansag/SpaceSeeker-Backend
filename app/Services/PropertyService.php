@@ -1,0 +1,91 @@
+<?php
+
+namespace app\Services;
+
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+
+class PropertyService
+{
+    public function create(array $validated, $thumbnail = null, $images = [], $amenities = [], $facilities = [])
+    {
+        DB::beginTransaction();
+
+        try {
+            // Insert property
+            $propertyId = DB::table('properties')->insertGetId([
+                'owner_id' => Auth::id(),
+                'title' => $validated['title'],
+                'thumbnail' => $thumbnail,
+                'description' => $validated['description'] ?? null,
+                'price' => $validated['price'],
+                'utilities_included' => $validated['utilities_included'] ?? false,
+                'agreement_type' => $validated['agreement_type'],
+                'advance_payment_months' => $validated['advance_payment_months'] ?? 0,
+                'deposit_required' => $validated['deposit_required'] ?? null,
+                'payment_frequency' => $validated['payment_frequency'] ?? 'monthly',
+                'lease_term_months' => $validated['lease_term_months'] ?? null,
+                'renewal_option' => $validated['renewal_option'] ?? null,
+                'notice_period' => $validated['notice_period'] ?? null,
+                'has_curfew' => $validated['has_curfew'] ?? false,
+                'curfew_time' => $validated['curfew_time'] ?? null,
+                'property_type_id' => $validated['property_type_id'],
+                'furnishing' => $validated['furnishing'] ?? null,
+                'parking' => $validated['parking'] ?? false,
+                'is_available' => false,
+                'bedrooms' => $validated['bedrooms'] ?? null,
+                'bathrooms' => $validated['bathrooms'] ?? null,
+                'bed_space' => $validated['bed_space'] ?? null,
+                'floor_area' => $validated['floor_area'] ?? null,
+                'lot_area' => $validated['lot_area'] ?? null,
+                'max_size' => $validated['max_size'] ?? null,
+                'latitude' => $validated['latitude'] ?? null,
+                'longitude' => $validated['longitude'] ?? null,
+                'region_id' => $validated['region_id'] ?? null,
+                'province_id' => $validated['province_id'] ?? null,
+                'muncity_id' => $validated['muncity_id'] ?? null,
+                'barangay_id' => $validated['barangay_id'] ?? null,
+                'rules' => $validated['rules'] ?? null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Property images
+            foreach ($images as $imagePath) {
+                DB::table('property_images')->insert([
+                    'property_id' => $propertyId,
+                    'img_path' => $imagePath,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            // Amenities
+            foreach ($amenities as $amenityId) {
+                DB::table('property_amenities')->insert([
+                    'property_id' => $propertyId,
+                    'amenity_id' => $amenityId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            // Facilities
+            foreach ($facilities as $facilityId) {
+                DB::table('property_facilities')->insert([
+                    'property_id' => $propertyId,
+                    'facility_id' => $facilityId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            DB::commit();
+
+            return $propertyId;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e; // let the controller handle errors
+        }
+    }
+}

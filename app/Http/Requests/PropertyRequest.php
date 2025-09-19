@@ -23,42 +23,43 @@ class PropertyRequest extends FormRequest
     {
         return [
             'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
             'thumbnail' => 'nullable|image|max:1024',
-            'rules' => 'nullable|string',   
+            'description' => 'nullable|string',
+
             // Property Prices
             'price' => 'required|numeric',
-            'parking' => 'nullable',
-            'utilities_included' => 'nullable',
-            'advance_payment' => 'nullable|numeric',
-            'deposit_required' => 'nullable|numeric',
-            'payment_frequency' => 'nullable|string',
-
-            'lease_term_moneths' => 'nullable|numeric',
+            'utilities_included' => 'nullable|boolean',
+            'agreement_type' => 'required|in:rental,lease',
+            'advance_payment_months' => 'nullable|integer|min:0',
+            'deposit_required' => 'nullable|numeric|min:0',
+            'payment_frequency' => 'required|in:daily,weekly,monthly,yearly',
+            'lease_term_months' => 'nullable|integer|min:1',
             'renewal_option' => 'nullable|string',
-            'notice_period' => 'nullable|numeric',
-            'has_curfew' => 'nullable',
-            'curfew_time' => 'nullable',
-            // Property Features
-            'agreement_type' => 'required|string',
-            'property_type_id' => 'required|exists:property_types,id',
-            'furnishing' => 'nullable|string',
-            'bedrooms' => 'nullable|numeric',
-            'bed_space' => 'nullable|numeric',
-            'floor_area' => 'nullable|numeric',
-            'lot_area' => 'nullable|numeric',
-            'max_size' => 'nullable|numeric',
-            // Location
-            'region_id' => 'nullable',
-            'province_id' => 'nullable',
-            'muncity_id' => 'nullable',
-            'barangay_id' => 'nullable',
-            'latitude' => 'nullable|numeric',
-            'longitude' => 'nullable|numeric',
+            'notice_period' => 'nullable|integer|min:0',
+            'has_curfew' => 'nullable|boolean',
+            'curfew_time' => 'nullable|date_format:H:i',
 
-            'images.*' => 'nullable|image|max:2048',
-            'property_facilities.*' => 'exists:facilities,id',
-            'property_amenities.*' => 'exists:amenities,id',
+            // Property Features
+            'property_type_id' => 'required|exists:property_types,id',
+            'furnishing' => 'nullable|in:unfurnished,semi-furnished,fully-furnished',
+            'parking' => 'nullable|boolean',
+            'bedrooms' => 'nullable|integer|min:0',
+            'bathrooms' => 'nullable|integer|min:0',
+            'bed_space' => 'nullable|integer|min:0',
+            'floor_area' => 'nullable|numeric|min:0',
+            'lot_area' => 'nullable|numeric|min:0',
+            'max_size' => 'nullable|integer|min:0',
+
+            // Location
+            'latitude' => 'nullable|numeric|between:-90,90',
+            'longitude' => 'nullable|numeric|between:-180,180',
+            'region_id' => 'nullable|exists:regions,id',
+            'province_id' => 'nullable|exists:provinces,id',
+            'muncity_id' => 'nullable|exists:muncities,id',
+            'barangay_id' => 'nullable|exists:barangays,id',
+
+            // Rules
+            'rules' => 'nullable|string', 
         ];
     }
 }

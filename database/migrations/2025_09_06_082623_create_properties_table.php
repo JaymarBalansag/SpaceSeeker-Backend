@@ -43,6 +43,11 @@ return new class extends Migration
             // RENTAL = daily/weekly/monthly
             // LEASE = monthly/yearly (rarely weekly)
             $table->enum("payment_frequency", ['daily','weekly','monthly','yearly'])->default('monthly'); 
+            $table->integer('lease_term_months')->nullable();
+            $table->string('renewal_option')->nullable();
+            $table->integer('notice_period')->nullable();
+            $table->boolean('has_curfew')->default(false)->nullable();
+            $table->time('curfew_time')->nullable();
 
 
             // =======================
@@ -58,7 +63,7 @@ return new class extends Migration
             $table->boolean("parking")->default(false)->nullable();
             // Relevant for apartment/condo/house/commercial
 
-            $table->boolean("is_available")->default(true)->nullable();
+            $table->boolean("is_available")->default(false)->nullable();
 
 
             // =======================
@@ -84,13 +89,12 @@ return new class extends Migration
             $table->foreignId("province_id")->constrained("provinces","id")->cascadeOnDelete()->nullable();
             $table->foreignId("muncity_id")->constrained("muncities","id")->cascadeOnDelete()->nullable();
             $table->foreignId("barangay_id")->constrained("barangays","id")->cascadeOnDelete()->nullable();
-
+            
 
             // =======================
             // RULES & EXTRA
             // =======================
             $table->text("rules")->nullable(); // e.g., "No pets, no smoking"
-            $table->json("images")->nullable(); // Store multiple photos
             $table->timestamps();
         });
     }
