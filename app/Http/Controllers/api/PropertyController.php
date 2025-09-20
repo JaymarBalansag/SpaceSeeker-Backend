@@ -9,6 +9,9 @@ use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\PropertyRequest;
 use App\Http\Requests\isSubscribingRequest;
+use Exception;
+
+use function PHPUnit\Framework\isEmpty;
 
 class PropertyController extends Controller
 {
@@ -117,6 +120,39 @@ class PropertyController extends Controller
             ], 500);
         }
     }
+
+    public function readProperties(){
+        try{
+            $properties = DB::table("properties")
+            ->join("regions", "properties.region_id", "=", "regions.id")
+            ->join("provinces", "properties.province_id", "=", "provinces.id")
+            ->select(
+                "properties.*", 
+            "regions.regDesc", 
+            "provinces.provDesc",
+            DB::raw("CONCAT('" . asset('storage/properties') . "/', properties.thumbnail) as image_url")
+            )->get();
+
+            if($properties->isEmpty()){
+                return response()->json([
+                    "message" => "Please add a property",
+                ], 404);
+            }
+
+            return response()->json([
+                "message" => "Property found",
+                "properties" => $properties
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => "Error getting property: " . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // * READ PROPERTIES FOR HOMES
+
 
 
 

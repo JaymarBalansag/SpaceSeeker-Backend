@@ -37,6 +37,7 @@ Route::middleware("auth:sanctum")->group(function(){
         // Property CRUD
 
         Route::post('/properties', 'createProperty');
+        Route::get("properties", "ReadProperties");
         Route::get('/properties/{id}', 'showProperty');
         Route::put('/properties/{id}', 'updateProperty');
         Route::delete('/properties/{id}', 'deleteProperty');
