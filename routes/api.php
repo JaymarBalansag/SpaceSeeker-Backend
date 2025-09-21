@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\api\AuthController;
@@ -14,13 +15,25 @@ Route::controller(AuthController::class)->group(function(){
 
 });
 
+Route::controller(PropertyController::class)->group(function() {
+        Route::get("/amenities", "getAmenities");
+        Route::get("/facilities", "getFacilities");
+        Route::get("/property_types", "getPropertyTypes");
+        Route::get("/properties", "ReadProperties");
+});
+
 
 
 Route::middleware("auth:sanctum")->group(function(){
 
 
-    Route::get('/user', function (Request $request) {
-        return $request->user();
+    // Route::get('/user', function (Request $request) {
+    //     return $request->user();
+    // });
+
+    Route::controller(UserController::class)->group(function(){
+        Route::post("/profile_completion", "completeProfile");
+        Route::get("/user", "getUser");
     });
 
 
@@ -30,14 +43,13 @@ Route::middleware("auth:sanctum")->group(function(){
 
     Route::controller(PropertyController::class)->group(function(){
         Route::post("/is-subscribing", "isSubscribing");
-        Route::get("/amenities", "getAmenities");
-        Route::get("/facilities", "getFacilities");
-        Route::get("/property_types", "getPropertyTypes");
+
 
         // Property CRUD
 
         Route::post('/properties', 'createProperty');
-        Route::get("properties", "ReadProperties");
+
+        Route::get("/owner/properties", "readOwnerProperties");
         Route::get('/properties/{id}', 'showProperty');
         Route::put('/properties/{id}', 'updateProperty');
         Route::delete('/properties/{id}', 'deleteProperty');

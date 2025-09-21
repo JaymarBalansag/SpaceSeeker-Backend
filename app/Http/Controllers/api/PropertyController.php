@@ -151,9 +151,39 @@ class PropertyController extends Controller
         }
     }
 
-    // * READ PROPERTIES FOR HOMES
+    // * READ PROPERTIES FOR Owner
 
+    public function readOwnerProperties(){
+        try{
 
+            $ownerid = DB::table("owners")->where("user_id", "=", Auth::id())->first();
+
+            $properties = DB::table("properties")
+            ->join("regions", "properties.region_id", "=", "regions.id")
+            ->join("provinces", "properties.province_id", "=", "provinces.id")
+            ->select("properties.*", "regions.regDesc", "provinces.provDesc",
+            DB::raw("CONCAT('" . asset('storage/properties') . "/', properties.thumbnail) as image_url")
+            )
+            ->where("owner_id", "=", $ownerid->id)
+            ->get();
+
+            if($properties->isEmpty()){
+                return response()->json([
+                    "message" => "Please add a property",
+                ], 404);
+            }
+
+            return response()->json([
+                "message" => "Property found",
+                "properties" => $properties
+            ], 200);
+
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => "Error getting property: " . $e->getMessage(),
+            ], 500);
+        }
+    }
 
 
     
