@@ -20,6 +20,7 @@ Route::controller(PropertyController::class)->group(function() {
         Route::get("/facilities", "getFacilities");
         Route::get("/property_types", "getPropertyTypes");
         Route::get("/properties", "ReadProperties");
+        Route::get('/properties/filters', 'getFilteredProperty');
 });
 
 
@@ -51,8 +52,11 @@ Route::middleware("auth:sanctum")->group(function(){
 
         Route::get("/owner/properties", "readOwnerProperties");
         Route::get('/properties/{id}', 'showProperty');
+        Route::get("/properties/type/{type_id}{property_id}", "getPropertyByType");
         Route::put('/properties/{id}', 'updateProperty');
         Route::delete('/properties/{id}', 'deleteProperty');
+
+        
 
     });
 

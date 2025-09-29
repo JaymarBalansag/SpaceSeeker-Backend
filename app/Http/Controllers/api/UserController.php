@@ -67,7 +67,8 @@ class UserController extends Controller
             ->select("users.*", 
             "provinces.provDesc", 
             "muncities.muncityDesc", 
-            "barangays.brgyDesc")
+            "barangays.brgyDesc",
+            DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"))
             ->where("users.id", "=", $userid)
             ->get();
 

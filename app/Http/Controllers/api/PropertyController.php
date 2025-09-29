@@ -2,16 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
+use Exception;
 use Illuminate\Http\Request;
 use App\Services\PropertyService;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\PropertyRequest;
-use App\Http\Requests\isSubscribingRequest;
-use Exception;
-
 use function PHPUnit\Framework\isEmpty;
+
+use Illuminate\Support\Facades\Storage;
+use App\Http\Requests\isSubscribingRequest;
 
 class PropertyController extends Controller
 {
@@ -130,7 +131,7 @@ class PropertyController extends Controller
                 "properties.*", 
             "regions.regDesc", 
             "provinces.provDesc",
-            DB::raw("CONCAT('" . asset('storage/properties') . "/', properties.thumbnail) as image_url")
+            DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
             )->get();
 
             if($properties->isEmpty()){
@@ -162,8 +163,7 @@ class PropertyController extends Controller
             ->join("regions", "properties.region_id", "=", "regions.id")
             ->join("provinces", "properties.province_id", "=", "provinces.id")
             ->select("properties.*", "regions.regDesc", "provinces.provDesc",
-            DB::raw("CONCAT('" . asset('storage/properties') . "/', properties.thumbnail) as image_url")
-            )
+            DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url"))
             ->where("owner_id", "=", $ownerid->id)
             ->get();
 
@@ -185,6 +185,135 @@ class PropertyController extends Controller
         }
     }
 
+    public function showProperty($id)
+    {
+        try {
+            // Fetch main property
+            $property = DB::table('properties')
+                ->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
+                ->select(
+                    'properties.*',
+                    'property_types.id as type_id',
+                    'property_types.type_name',
+                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
+                )
+                ->where('properties.id', $id)
+                ->first();
 
-    
+            if (!$property) {
+                return response()->json([
+                    'message' => 'Property not found'
+                ], 404);
+            }
+
+            // Fetch related amenities
+            $amenities = DB::table('property_amenities')
+                ->join('amenities', 'property_amenities.amenity_id', '=', 'amenities.id')
+                ->where('property_amenities.property_id', $id)
+                ->pluck('amenities.amenity_name');
+
+            // Fetch related facilities
+            $facilities = DB::table('property_facilities')
+                ->join('facilities', 'property_facilities.facility_id', '=', 'facilities.id')
+                ->where('property_facilities.property_id', $id)
+                ->pluck('facilities.facility_name');
+
+            return response()->json([
+                'property' => [
+                    'id' => $property->id,
+                    'title' => $property->title,
+                    'description' => $property->description,
+                    'price' => $property->price,
+                    'payment_frequency' => $property->payment_frequency,
+                    'agreement_type' => $property->agreement_type,
+                    'type_id' => $property->type_id,
+                    'type_name' => $property->type_name,
+                    'image_url' => $property->thumbnail ? asset('storage/' . $property->thumbnail) : null,
+                    'amenities' => $amenities,
+                    'facilities' => $facilities,
+                ],
+                'message' => 'Property details fetched successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error fetching property details',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getPropertyByType($type_id, $property_id){
+        try {
+            
+            $property = DB::table("properties")
+            ->join("property_types", "properties.property_type_id", "=", "property_types.id")
+            ->select("properties.*", "property_types.type_name",
+            DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url"))
+            ->where("properties.property_type_id", "=", $type_id,)
+            ->where("properties.id", "!=", $property_id)
+            ->get();
+
+            if (!$property) {
+                return response()->json([
+                    'message' => 'Property not found'
+                ], 404);
+            }
+
+            return response()->json([
+                "message" => "Property Found",
+                "properties" => $property
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error fetching property details',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getFilteredProperty(Request $request)
+    {
+        // dd($request->all());
+        try {
+            $query = DB::table('properties')
+                ->select('properties.*',
+                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
+                )
+                ->distinct();
+
+            // Filter by amenities
+            if ($request->has('amenities') && !empty($request->amenities)) {
+                $amenities = is_array($request->amenities) ? $request->amenities : explode(',', $request->amenities);
+
+                $query->join('property_amenities', 'properties.id', '=', 'property_amenities.property_id')
+                    ->whereIn('property_amenities.amenity_id', $amenities);
+            }
+            
+            if ($request->has('facilities') && !empty($request->facilities)) {
+                $facilities = is_array($request->facilities) ? $request->facilities : explode(',', $request->facilities);
+
+                $query->join('property_facilities', 'properties.id', '=', 'property_facilities.property_id')
+                    ->whereIn('property_facilities.facility_id', $facilities);
+            }
+
+            // Example: filter by price
+            if ($request->has('min_price') && $request->has('max_price')) {
+                $query->whereBetween('properties.price', [$request->min_price, $request->max_price]);
+            }
+
+            $properties = $query->get();
+
+            return response()->json([
+                'message' => 'Filtered properties fetched successfully',
+                'properties' => $properties
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => "Error fetching filtered properties: " . $e->getMessage()
+            ], 500);
+        }
+    }
+
 }
