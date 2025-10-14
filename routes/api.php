@@ -1,12 +1,13 @@
 <?php
 
-use App\Http\Controllers\Api\PaymentController;
-use App\Http\Controllers\Api\UserController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\api\AuthController;
+use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PropertyController;
+use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -71,5 +72,19 @@ Route::middleware("auth:sanctum")->group(function(){
         Route::get("/barangays/{muncity_code}", "getBarangays"); // Get barangays by municipality
     });
     
+});
+
+
+Route::middleware(["auth:sanctum", "is_admin"])->group(function() {
+    // Admin specific routes can be added here
+    Route::controller(AdminPropertyController::class)->group(function() {
+        Route::get("/admin/properties/active", "getActiveProperties");
+        Route::get("/admin/properties/pending", "getPendingProperties");
+        Route::get("/admin/properties/rejected", "getRejectedProperties");
+        Route::get('/admin/properties/{id}', 'showPropertyDetails');
+
+        // Actions
+        Route::put('/admin/properties/{id}/approve', 'approveProperty');
+    });
 });
 

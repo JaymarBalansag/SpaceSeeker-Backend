@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string("phone_number")->nullable();
             $table->string('email')->unique();
             $table->string('password');
+            $table->boolean('isComplete')->default(false);
             $table->string("user_img")->nullable();
             $table->enum("role",['user','owner','admin'])->default('user');
             $table->decimal("latitude",10,8)->nullable();

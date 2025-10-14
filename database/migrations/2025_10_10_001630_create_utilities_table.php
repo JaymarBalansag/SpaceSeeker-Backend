@@ -11,9 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('owners', function (Blueprint $table) {
+        Schema::create('utilities', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained('users', "id")->cascadeOnDelete();
+            $table->string("utility_name");
+            $table->foreignId("property_id")->constrained("properties", "id")->cascadeOnDelete();
             $table->timestamps();
         });
     }
@@ -23,6 +24,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('owners');
+        Schema::dropIfExists('utilities');
     }
 };

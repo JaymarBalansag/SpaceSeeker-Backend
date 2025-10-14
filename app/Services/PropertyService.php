@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Auth;
 
 class PropertyService
 {
-    public function create(array $validated, $thumbnail = null, $images = [], $amenities = [], $facilities = [])
+    public function create(array $validated, $thumbnail = null, $images = [], $amenities = [], $facilities = [], $utilities = [])
     {
         DB::beginTransaction();
 
@@ -50,6 +50,7 @@ class PropertyService
                 'muncity_id' => $validated['muncity_id'] ?? null,
                 'barangay_id' => $validated['barangay_id'] ?? null,
                 'rules' => $validated['rules'] ?? null,
+                'status' => 'pending',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -79,6 +80,16 @@ class PropertyService
                 DB::table('property_facilities')->insert([
                     'property_id' => $propertyId,
                     'facility_id' => $facilityId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            // Utilities
+            foreach ($utilities as $utilityId) {
+                DB::table('utilities')->insert([
+                    'utility_name' => $utilityId,
+                    'property_id' => $propertyId,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);

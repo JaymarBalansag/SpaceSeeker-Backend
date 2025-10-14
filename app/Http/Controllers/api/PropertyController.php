@@ -99,13 +99,21 @@ class PropertyController extends Controller
             $amenities = $request->input('property_amenities', []);
             $facilities = $request->input('property_facilities', []);
 
+            $utilities = $request->input('utilities', []);
+            if(!empty($utilities)){
+                $validated['utilities_included'] = true;
+            } else {
+                $validated['utilities_included'] = false;
+            }
+
             // Call service
             $propertyId = $this->propertyService->create(
                 $validated,
                 $thumbnailPath,
                 $imagePaths,
                 $amenities,
-                $facilities
+                $facilities,
+                $utilities
             );
 
             return response()->json([
@@ -132,7 +140,10 @@ class PropertyController extends Controller
             "regions.regDesc", 
             "provinces.provDesc",
             DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-            )->get();
+            )
+            ->where("properties.status", "=", "available")
+            ->where("properties.approval_status", "=", "approved")
+            ->get();
 
             if($properties->isEmpty()){
                 return response()->json([
@@ -300,6 +311,40 @@ class PropertyController extends Controller
             // Example: filter by price
             if ($request->has('min_price') && $request->has('max_price')) {
                 $query->whereBetween('properties.price', [$request->min_price, $request->max_price]);
+            }
+
+
+            $properties = $query->get();
+
+            return response()->json([
+                'message' => 'Filtered properties fetched successfully',
+                'properties' => $properties
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => "Error fetching filtered properties: " . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getTypeFilter(Request $request) {
+        try {
+            $query = DB::table('properties')
+                ->select('properties.*',
+                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
+                )
+                ->distinct();
+
+            if($request->has("selectedType") && !empty($request->selectedType)){
+                $types = $request->selectedType;
+                $query->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
+                ->whereIn('property_types.id', "=", $types);
+            }
+
+            if($request->has("selectedAgreement") && !empty($request->selectedAgreement)){
+                $agreements = $request->selectedAgreement;
+                $query->whereIn('properties.agreement_type', $agreements);
             }
 
             $properties = $query->get();

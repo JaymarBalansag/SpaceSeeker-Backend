@@ -12,51 +12,60 @@ class PaymentController extends Controller
     //
     public function confirm(Request $request)
     {
-        $user = Auth::user(); // from token
+        try {
+            // dd($request->all());
+            $user = Auth::user();
 
-        // If already owner, block
-        if ($user->role === 'owner') {
+            // Step 1: Check role
+            if ($user->role === 'owner') {
+                return response()->json(['message' => 'Already an owner.'], 400);
+            }
+
+            // Step 2: Promote user to owner if not yet
+            $ownerId = DB::table('owners')->insertGetId([
+                'user_id' => $user->id,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Step 3: Determine plan details
+            $plan = strtolower($request->plan); // monthly or annual
+            $start = now();
+            $due = $plan === 'annual' ? $start->copy()->addYear() : $start->copy()->addMonth();
+            $price = $plan === 'annual' ? 5000 : 500; // Example prices
+            $listingLimit = $plan === 'annual' ? 15 : 5; // Example limits
+
+            // Step 4: Create subscription record
+            $subId = DB::table('subscriptions')->insertGetId([
+                'owner_id' => $ownerId,
+                'plan_name' => $plan,
+                'amount' => $price,
+                'billing_cycle' => $plan,
+                'start_date' => $start,
+                'end_date' => $due,
+                'status' => 'active',
+                'listing_limit' => $listingLimit,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Step 5: Update owner with active subscription ID
+            DB::table('owners')->where('id', $ownerId)->update([
+                'active_subscription_id' => $subId
+            ]);
+
+            // Step 6: Update user role
+            DB::table('users')->where('id', $user->id)->update(['role' => 'owner']);
+
             return response()->json([
-                'message' => 'You are already an Owner.',
-                'user' => $user
-            ], 400);
+                'message' => 'Payment confirmed. You are now an Owner!',
+                'plan' => $plan,
+                'subscription_id' => $subId
+            ]);
+        } catch (\Exception $e) {
+            //throw $th;
+            return response()->json(['error' => 'An error occurred while processing your request.' . $e], 500);
         }
-
-        // Update user role
-        DB::table('users')
-            ->where('id', $user->id)
-            ->update(['role' => 'owner', 'updated_at' => now()]);
-
-        // Prepare plan dates
-        $today = now();
-        $due = null;
-        $plan = strtolower($request->plan ?? 'per_transaction');
-
-        if ($plan === 'monthly') {
-            $due = $today->copy()->addMonth();
-        } elseif ($plan === 'yearly') {
-            $due = $today->copy()->addYear();
-        } else {
-            $due = $today->copy()->addDay();
-        }
-
-        // Insert into owners table
-        DB::table('owners')->insert([
-            'user_id' => $user->id,
-            'plan' => $plan,
-            'plan_start' => $today,
-            'plan_due' => $due,
-            'listing_limit' => $plan === 'yearly' ? 50 : ($plan === 'monthly' ? 20 : 5),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
-        // Refresh user (with new role)
-        $updatedUser = DB::table('users')->where('id', $user->id)->first();
-
-        return response()->json([
-            'message' => 'Payment confirmed. You are now an Owner!',
-            'user' => $updatedUser
-        ]);
+        
     }
 }
