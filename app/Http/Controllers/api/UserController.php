@@ -61,9 +61,9 @@ class UserController extends Controller
             $userid = Auth::id();
 
             $user = DB::table("users")
-            ->join("provinces", "users.province_id", "=", "provinces.id")
-            ->join("muncities", "users.muncity_id", "=", "muncities.id")
-            ->join("barangays", "users.barangay_id", "=", "barangays.id")
+            ->leftJoin("provinces", "users.province_id", "=", "provinces.id")
+            ->leftJoin("muncities", "users.muncity_id", "=", "muncities.id")
+            ->leftJoin("barangays", "users.barangay_id", "=", "barangays.id")
             ->select("users.*", 
             "provinces.provDesc", 
             "muncities.muncityDesc", 
@@ -74,6 +74,7 @@ class UserController extends Controller
 
             return response()->json([
                 "message" => "User found",
+                "userid" => $userid,
                 "user" => $user 
             ],200);
 

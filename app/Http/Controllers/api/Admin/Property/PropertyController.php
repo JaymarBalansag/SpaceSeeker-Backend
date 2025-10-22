@@ -120,6 +120,7 @@ class PropertyController extends Controller
             ->join("users", "owners.user_id", "=", "users.id")
             ->join("property_types", "properties.property_type_id", "=", "property_types.id")
             ->select(
+                "properties.id as property_id",
                 "properties.*",
                 "users.*",
                 "property_types.type_name",
@@ -159,6 +160,7 @@ class PropertyController extends Controller
             ->join("property_types", "properties.property_type_id", "=", "property_types.id")
             ->select(
                 "properties.*",
+                "properties.id as property_id",
                 "users.*",
                 "property_types.type_name",
                 DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as thumbnail_url")

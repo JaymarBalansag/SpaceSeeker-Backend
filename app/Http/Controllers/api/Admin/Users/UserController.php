@@ -1,0 +1,112 @@
+<?php
+
+namespace App\Http\Controllers\Api\Admin\Users;
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use App\Http\Controllers\Controller;
+
+class UserController extends Controller
+{
+    public function getAllUsers() {
+        try {
+            $users = DB::table("users")
+            ->leftjoin("regions", "users.region_id", "=", "regions.id")
+            ->leftjoin("provinces", "users.province_id", "=", "provinces.id")
+            ->leftjoin("muncities", "users.muncity_id", "=", "muncities.id")
+            ->leftjoin("barangays", "users.barangay_id", "=", "barangays.id")
+            ->select("users.*", "regions.regDesc", "provinces.provDesc", "muncities.muncityDesc", "brgyDesc",
+            DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"))
+            ->get();
+
+            if($users->count() === 0){
+                return response()->json([
+                    "message" => "No users found"
+                ], 404);
+
+            }
+
+            return response()->json([
+                "message" => "Users retrieved successfully",
+                "data" => $users
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Server Error",
+                "error" => $e->getMessage()
+            ]);
+        }
+    }
+    public function getCompleteProfile(){
+        try {
+            $users = DB::table("users")
+                ->leftJoin("regions", "users.region_id", "=", "regions.id")
+                ->leftJoin("provinces", "users.province_id", "=", "provinces.id")
+                ->leftJoin("muncities", "users.muncity_id", "=", "muncities.id")
+                ->leftJoin("barangays", "users.barangay_id", "=", "barangays.id")
+                ->select(
+                    "users.*",
+                    "regions.regDesc",
+                    "provinces.provDesc",
+                    "muncities.muncityDesc",
+                    "barangays.brgyDesc",
+                    DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url")
+                    )
+                ->where("users.isComplete", 1) // ✅ simpler and correct
+                ->get();
+
+            if ($users->isEmpty()) {
+                return response()->json([
+                    "message" => "No complete users found",
+                ], 404);
+            }
+
+            return response()->json([
+                "message" => "Complete users retrieved successfully",
+                "data" => $users
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Server Error",
+                "error" => $e->getMessage()
+            ]);
+        }
+    }
+    public function getIncompleteProfile() {
+        try {
+            $users = DB::table("users")
+                ->leftJoin("regions", "users.region_id", "=", "regions.id")
+                ->leftJoin("provinces", "users.province_id", "=", "provinces.id")
+                ->leftJoin("muncities", "users.muncity_id", "=", "muncities.id")
+                ->leftJoin("barangays", "users.barangay_id", "=", "barangays.id")
+                ->select(
+                    "users.*",
+                    "regions.regDesc",
+                    "provinces.provDesc",
+                    "muncities.muncityDesc",
+                    "barangays.brgyDesc"
+                )
+                ->where("users.isComplete", "=", false || 0)
+                ->get();
+
+            if ($users->isEmpty()) {
+                return response()->json([
+                    "message" => "No incomplete users found",
+                ], 404);
+            }
+
+            return response()->json([
+                "message" => "Incomplete users retrieved successfully",
+                "data" => $users
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Server Error",
+                "error" => $e->getMessage()
+            ]);
+        }
+    }
+}

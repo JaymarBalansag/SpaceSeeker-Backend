@@ -8,6 +8,8 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
+use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
+use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -82,9 +84,21 @@ Route::middleware(["auth:sanctum", "is_admin"])->group(function() {
         Route::get("/admin/properties/pending", "getPendingProperties");
         Route::get("/admin/properties/rejected", "getRejectedProperties");
         Route::get('/admin/properties/{id}', 'showPropertyDetails');
-
+        
         // Actions
         Route::put('/admin/properties/{id}/approve', 'approveProperty');
+    });
+
+    Route::controller(AdminOwnerController::class)->group(function(){
+        Route::get("/admin/owner/", "getAllOwner");
+        Route::get("/admin/owner/inactive", "getInactiveOwner");
+        Route::get("/admin/owner/active", "getActiveOwner");
+    });
+
+    Route::controller(AdminUserController::class)->group(function(){
+        Route::get("/admin/users", "getAllUsers");
+        Route::get("/admin/users/completed", "getCompleteProfile");
+        Route::get("/admin/users/incomplete", "getIncompleteProfile");
     });
 });
 

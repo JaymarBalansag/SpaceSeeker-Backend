@@ -141,8 +141,7 @@ class PropertyController extends Controller
             "provinces.provDesc",
             DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
             )
-            ->where("properties.status", "=", "available")
-            ->where("properties.approval_status", "=", "approved")
+            ->where("properties.status", "=", "active")
             ->get();
 
             if($properties->isEmpty()){
@@ -262,6 +261,7 @@ class PropertyController extends Controller
             DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url"))
             ->where("properties.property_type_id", "=", $type_id,)
             ->where("properties.id", "!=", $property_id)
+            ->where("properties.status", "=", "active")
             ->get();
 
             if (!$property) {
@@ -291,6 +291,7 @@ class PropertyController extends Controller
                 ->select('properties.*',
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
+                ->where("properties.status", "=", "active")
                 ->distinct();
 
             // Filter by amenities
@@ -334,6 +335,7 @@ class PropertyController extends Controller
                 ->select('properties.*',
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
+                ->where("properties.status", "=", "active")
                 ->distinct();
 
             if($request->has("selectedType") && !empty($request->selectedType)){
