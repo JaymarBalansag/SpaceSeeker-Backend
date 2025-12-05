@@ -30,7 +30,7 @@ class ProfileCompletionRequest extends FormRequest
             'barangay_id'  => 'nullable|integer',
             'latitude'     => 'nullable|numeric',
             'longitude'    => 'nullable|numeric',
-            'user_img'     => 'nullable|image|max:2048',
+            'user_img'     => 'nullable|image',
         ];
     }
 }

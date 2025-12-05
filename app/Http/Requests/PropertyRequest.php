@@ -23,7 +23,7 @@ class PropertyRequest extends FormRequest
     {
         return [
             'title' => 'required|string|max:255',
-            'thumbnail' => 'nullable|image|max:2048',
+            'thumbnail' => 'nullable|image',
             'description' => 'nullable|string',
 
             // Property Prices

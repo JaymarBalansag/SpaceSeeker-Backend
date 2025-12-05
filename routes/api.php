@@ -4,12 +4,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\api\AuthController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PropertyController;
-use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
-use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
+use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
+use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
+use App\Http\Controllers\Api\BookingController;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -29,6 +31,7 @@ Route::controller(PropertyController::class)->group(function() {
 
 
 Route::middleware("auth:sanctum")->group(function(){
+    Route::post('/messages', [MessageController::class, 'sendMessage']);
 
 
     // Route::get('/user', function (Request $request) {
@@ -73,9 +76,14 @@ Route::middleware("auth:sanctum")->group(function(){
         Route::get("/municities/{province_code}", "getMunCities"); // Get municipalities by province
         Route::get("/barangays/{muncity_code}", "getBarangays"); // Get barangays by municipality
     });
+
+    Route::controller(BookingController::class)->group(function() {
+        Route::post('/bookings/submit_booking', 'submitBookingRequest');
+        Route::get("/bookings/pending", "getPendingUserBookings");
+    });
     
 });
-
+// Test
 
 Route::middleware(["auth:sanctum", "is_admin"])->group(function() {
     // Admin specific routes can be added here
