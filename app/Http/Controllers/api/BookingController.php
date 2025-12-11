@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BookingRequest;
+use App\Http\Requests\TenantsRequest;
 use Illuminate\Support\Facades\Auth;
 
 class BookingController extends Controller
@@ -95,12 +96,15 @@ class BookingController extends Controller
 
             $bookings = DB::table("bookings")
             ->join("properties", "bookings.property_id", "=", "properties.id")
+            ->join("property_types", "properties.property_type_id", "=", "property_types.id")
             ->join("users", "bookings.user_id", "=", "users.id")
             ->select(
                 "bookings.*",
                 "users.first_name",
                 "users.last_name",
+                "properties.id as property_id",
                 "properties.title",
+                "property_types.type_name"
 
             )
             ->where("bookings.status", "pending")
@@ -133,46 +137,64 @@ class BookingController extends Controller
 
     //!!! Actions
 
-    public function approveBooking(int $booking) {
+    public function approveBooking(int $booking_id){
         try {
-            //Get Booking Details By booking ID
+
+            // Get booking by ID
             $approveBooking = DB::table("bookings")
-            ->where("bookings.id", $booking)
-            ->first();
+                ->where("id", $booking_id)
+                ->first();
 
-            // Check if booking is found and pending
-            if($approveBooking->status != "pending" && $approveBooking) {
+            // Booking not found
+            if (!$approveBooking) {
                 return response()->json([
-                    "error" => "Only Pending Bookings can be Approved"
-                ], 400);
-
+                    "error" => "Booking Not Found"
+                ], 404);
             }
 
-            // TODO:In The Future:
-            // TODO: validate if property capacity is full,  if owner is active, payment validations
+            // Booking must be pending
+            if ($approveBooking->status !== "pending") {
+                return response()->json([
+                    "error" => "Booking is not pending"
+                ], 400);
+            }
 
-            $approveBookingRequest = DB::table("bookings")
-            ->where("bookings.id", $booking)
-            ->update([
-                "status" => "approved",
-                "updated_at" => now()
-            ]); 
+            // Approve booking
+            DB::table("bookings")
+                ->where("id", $booking_id)
+                ->update([
+                    "status" => "approved",
+                    "updated_at" => now()
+                ]);
 
-            $addedTenants = DB::table("tenants")
-            ->insert([
+            // Insert into tenants table
+            DB::table("tenants")->insert([
                 "user_id" => $approveBooking->user_id,
                 "property_id" => $approveBooking->property_id,
                 "created_at" => now(),
-                "updated_at" => now()
+                "updated_at" => now(),
+                "stay_duration" => $approveBooking->stay_duration ?? null,
+                "move_in_date" => $approveBooking->move_in_date ?? null,
+                "occupants_num" => $approveBooking->occupants_num ?? null,
+                "lease_duration" => $approveBooking->lease_duration ?? null,
+                "room_preference" => $approveBooking->room_preference ?? null,
+                "notes" => $approveBooking->notes ?? null,
+                "agreement" => $approveBooking->agreement ?? null,
             ]);
 
+            // Delete booking after approval
+            DB::table("bookings")->where("id", $booking_id)->delete();
+
+            return response()->json([
+                "message" => "Booking approved successfully"
+            ], 200);
 
         } catch (\Exception $e) {
-            //throw $th;
             return response()->json([
                 "message" => "Server Booking Approval Error",
                 "error" => $e->getMessage()
-            ]);
+            ], 500);
         }
     }
+
 }

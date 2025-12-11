@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\TenantsController;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -80,6 +81,13 @@ Route::middleware("auth:sanctum")->group(function(){
     Route::controller(BookingController::class)->group(function() {
         Route::post('/bookings/submit_booking', 'submitBookingRequest');
         Route::get("/bookings/pending", "getPendingUserBookings");
+
+        Route::post('/bookings/{booking_id}/approve', 'approveBooking');
+    });
+
+    Route::controller(TenantsController::class)->group(function() {
+        Route::get("/tenants/property/{propertyId}", "SelectTenantsByProperty");
+        Route::get("/tenants", "getAllTenants");
     });
     
 });
