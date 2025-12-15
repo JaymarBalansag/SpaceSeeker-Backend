@@ -201,8 +201,14 @@ class PropertyController extends Controller
             // Fetch main property
             $property = DB::table('properties')
                 ->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
+                ->join('owners', 'properties.owner_id', '=', 'owners.id')
+                ->join('users', 'owners.user_id', '=', 'users.id')
                 ->select(
                     'properties.*',
+                    'users.id as owner_id',
+                    'users.first_name as owner_first_name',
+                    'users.last_name as owner_last_name',
+                    DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img"),
                     'property_types.id as type_id',
                     'property_types.type_name',
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
@@ -231,6 +237,9 @@ class PropertyController extends Controller
             return response()->json([
                 'property' => [
                     'id' => $property->id,
+                    'owner_id' => $property->owner_id,
+                    'owner_name' => $property->owner_first_name . ' ' . $property->owner_last_name,
+                    'owner_profile_photo' => $property->user_img,
                     'title' => $property->title,
                     'description' => $property->description,
                     'price' => $property->price,

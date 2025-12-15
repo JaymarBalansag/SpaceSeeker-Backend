@@ -85,4 +85,21 @@ class UserController extends Controller
         }
     }
 
+    public function getUserID(){
+        try {
+            
+            $userid = Auth::id();
+
+            return response()->json([
+                "message" => "User ID retrieved successfully",
+                "userid" => $userid
+            ],200);
+
+        } catch (\Exception $e) {
+           return response()->json([
+                'message' => 'Error getting user ID: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
 }

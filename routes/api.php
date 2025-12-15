@@ -32,7 +32,6 @@ Route::controller(PropertyController::class)->group(function() {
 
 
 Route::middleware("auth:sanctum")->group(function(){
-    Route::post('/messages', [MessageController::class, 'sendMessage']);
 
 
     // Route::get('/user', function (Request $request) {
@@ -42,6 +41,7 @@ Route::middleware("auth:sanctum")->group(function(){
     Route::controller(UserController::class)->group(function(){
         Route::post("/profile_completion", "completeProfile");
         Route::get("/user", "getUser");
+        Route::get("/UID", "getUserID");
     });
 
 
@@ -88,6 +88,13 @@ Route::middleware("auth:sanctum")->group(function(){
     Route::controller(TenantsController::class)->group(function() {
         Route::get("/tenants/property/{propertyId}", "SelectTenantsByProperty");
         Route::get("/tenants", "getAllTenants");
+    });
+
+    Route::controller(MessageController::class)->group(function() {
+        Route::get('/messages/{userId}', 'fetchMessages');
+        Route::post('/messages/send', 'sendMessage');
+        Route::post('/messages/start', 'startMessage');
+        Route::get('/chats', 'chatList');
     });
     
 });
