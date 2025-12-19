@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
@@ -12,60 +13,94 @@ class PaymentController extends Controller
     //
     public function confirm(Request $request)
     {
+        $user = Auth::user();
+
+        // 1. Prevent double subscription
+        if ($user->role === 'owner') {
+            return response()->json([
+                'message' => 'You are already an owner'
+            ], 403);
+        }
+
+        // 2. Validate request
+        $request->validate([
+            'plan' => 'required|in:Monthly,Annual',
+            'payment_method' => 'required'
+        ]);
+
+        // 3. Determine plan details (NEVER trust frontend)
+        if ($request->plan === 'Monthly') {
+            $amount = 50;
+            $billing = 'monthly';
+            $listingLimit = 5;
+            $endDate = Carbon::now()->addMonth();
+        } else {
+            $amount = 500;
+            $billing = 'annual';
+            $listingLimit = 15;
+            $endDate = Carbon::now()->addYear();
+        }
+
+        DB::beginTransaction();
+
         try {
-            // dd($request->all());
-            $user = Auth::user();
+            // 4. Create subscription (simulation = active)
+            $subscriptionId = DB::table('subscriptions')->insertGetId([
+                'user_id' => $user->id,
+                'plan_name' => $request->plan,
+                'amount' => $amount,
+                'billing_cycle' => $billing,
+                'listing_limit' => $listingLimit,
+                'start_date' => Carbon::now(),
+                'end_date' => $endDate,
+                'payment_provider' => 'simulation',
+                'payment_method' => $request->payment_method,
+                'status' => 'active',
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
+            ]);
 
-            // Step 1: Check role
-            if ($user->role === 'owner') {
-                return response()->json(['message' => 'Already an owner.'], 400);
-            }
-
-            // Step 2: Promote user to owner if not yet
+            // 5. Create owner
             $ownerId = DB::table('owners')->insertGetId([
                 'user_id' => $user->id,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
             ]);
 
-            // Step 3: Determine plan details
-            $plan = strtolower($request->plan); // monthly or annual
-            $start = now();
-            $due = $plan === 'annual' ? $start->copy()->addYear() : $start->copy()->addMonth();
-            $price = $plan === 'annual' ? 5000 : 500; // Example prices
-            $listingLimit = $plan === 'annual' ? 15 : 5; // Example limits
+            // 6. Attach owner to subscription
+            DB::table('subscriptions')
+                ->where('id', $subscriptionId)
+                ->update([
+                    'owner_id' => $ownerId,
+                    'updated_at' => Carbon::now(),
+                ]);
 
-            // Step 4: Create subscription record
-            $subId = DB::table('subscriptions')->insertGetId([
-                'owner_id' => $ownerId,
-                'plan_name' => $plan,
-                'amount' => $price,
-                'billing_cycle' => $plan,
-                'start_date' => $start,
-                'end_date' => $due,
-                'status' => 'active',
-                'listing_limit' => $listingLimit,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            // 7. Update user role
+            DB::table('users')
+                ->where('id', $user->id)
+                ->update([
+                    'role' => 'owner',
+                    'updated_at' => Carbon::now(),
+                ]);
 
-            // Step 5: Update owner with active subscription ID
-            DB::table('owners')->where('id', $ownerId)->update([
-                'active_subscription_id' => $subId
-            ]);
+            DB::commit();
 
-            // Step 6: Update user role
-            DB::table('users')->where('id', $user->id)->update(['role' => 'owner']);
+            // 8. Fetch updated user
+            $updatedUser = DB::table('users')->where('id', $user->id)->first();
 
             return response()->json([
-                'message' => 'Payment confirmed. You are now an Owner!',
-                'plan' => $plan,
-                'subscription_id' => $subId
+                'message' => 'Subscription activated',
+                'user' => $updatedUser,
+                'subscription_id' => $subscriptionId
             ]);
+
         } catch (\Exception $e) {
-            //throw $th;
-            return response()->json(['error' => 'An error occurred while processing your request.' . $e], 500);
+            DB::rollBack();
+
+            return response()->json([
+                'message' => 'Payment processing failed',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
     }
 }

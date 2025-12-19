@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\TenantsController;
+use App\Http\Controllers\Api\UserPreference;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -68,7 +69,7 @@ Route::middleware("auth:sanctum")->group(function(){
     });
 
     Route::controller(PaymentController::class)->group(function() {
-        Route::post("/paymentConfirmation", 'confirm');
+        Route::post("/payment/confirm", 'confirm');
     });
 
     Route::controller(LocationController::class)->group(function(){
@@ -95,6 +96,12 @@ Route::middleware("auth:sanctum")->group(function(){
         Route::post('/messages/send', 'sendMessage');
         Route::post('/messages/start', 'startMessage');
         Route::get('/chats', 'chatList');
+    });
+
+    Route::controller(UserPreference::class)->group(function() {
+        Route::get('/user/preferences', 'getUserPreferences');
+        Route::post('/user/preferences', 'updateUserPreferences');
+        Route::get('/user/preferences/edit', 'getUserPreferencesForEdit');
     });
     
 });

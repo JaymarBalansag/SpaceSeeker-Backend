@@ -203,11 +203,13 @@ class PropertyController extends Controller
                 ->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
                 ->join('owners', 'properties.owner_id', '=', 'owners.id')
                 ->join('users', 'owners.user_id', '=', 'users.id')
+                ->join("subscriptions", "owners.id", '=', "subscriptions.owner_id")
                 ->select(
                     'properties.*',
-                    'users.id as owner_id',
+                    'users.id as owner_id', 
                     'users.first_name as owner_first_name',
                     'users.last_name as owner_last_name',
+                    'subscriptions.plan_name',
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img"),
                     'property_types.id as type_id',
                     'property_types.type_name',
@@ -221,6 +223,13 @@ class PropertyController extends Controller
                     'message' => 'Property not found'
                 ], 404);
             }
+
+            $images = DB::table('property_images')
+            ->where('property_id', $id)
+            ->pluck('img_path') // change column name if different
+            ->map(function ($img) {
+                return asset('storage/' . $img);
+            }); 
 
             // Fetch related amenities
             $amenities = DB::table('property_amenities')
@@ -243,13 +252,14 @@ class PropertyController extends Controller
                     'title' => $property->title,
                     'description' => $property->description,
                     'price' => $property->price,
-                    'payment_frequency' => $property->payment_frequency,
+                    'payment_frequency' => $property->plan_name,
                     'agreement_type' => $property->agreement_type,
                     'type_id' => $property->type_id,
                     'type_name' => $property->type_name,
                     'image_url' => $property->thumbnail ? asset('storage/' . $property->thumbnail) : null,
                     'amenities' => $amenities,
                     'facilities' => $facilities,
+                    'images' => $images,
                 ],
                 'message' => 'Property details fetched successfully'
             ]);
