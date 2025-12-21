@@ -94,31 +94,33 @@ class AuthController extends Controller
         // Create token (Sanctum)
         if($user){
             // Short-lived access token (15 mins)
-            $accessToken = $user->createToken('access-token', ['*'], Carbon::now()->addMinutes(15))->plainTextToken;
+            // $accessToken = $user->createToken('access-token', ['*'], Carbon::now()->addMinutes(15))->plainTextToken;
 
             // Long-lived refresh token (7 days)
-            $refreshToken = $user->createToken('refresh-token', ['*'], Carbon::now()->addDays(2))->plainTextToken;
+            // $refreshToken = $user->createToken('refresh-token', ['*'], Carbon::now()->addDays(2))->plainTextToken;
 
-            $cookie = Cookie::make(
-                'refresh_token',
-                $refreshToken,
-                60 * 24 * 2, 
-                "/",
-                null,
-                false, // secure
-                true, // httpOnly
-                false,
-                'Lax'
-            );
+            // $cookie = Cookie::make(
+            //     'refresh_token',
+            //     $refreshToken,
+            //     60 * 24 * 2, 
+            //     "/",
+            //     null,
+            //     false, // secure
+            //     true, // httpOnly
+            //     false,
+            //     'Lax'
+            // );
 
             $createdUser = DB::table('users')->where('email', $validated["email"])->first();
 
             return response()->json([
-                'access_token' => $accessToken,
-                'token_type' => 'Bearer',
-                'expires_in' => 900, // 15 mins
-                'user' => $createdUser
-            ])->cookie($cookie);
+                // 'access_token' => $accessToken,
+                // 'token_type' => 'Bearer',
+                // 'expires_in' => 900,  15 mins
+                'user' => $createdUser,
+                'message' => 'User registered successfully'
+            ], 200);
+            // ->cookie($cookie);
         }
         else {
             return response()->json([

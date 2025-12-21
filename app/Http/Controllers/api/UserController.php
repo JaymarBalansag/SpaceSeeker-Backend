@@ -40,9 +40,18 @@ class UserController extends Controller
                 'iscomplete'   => true,
             ]);
 
+            $userImage = DB::table("users")
+            ->select(
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"))
+            ->where("users.id", "=", $user->id)
+            ->first();
+
+
+
             return response()->json([
                 'message' => 'Profile completed successfully',
                 'user'    => $user->fresh(), // get latest data after update
+                'userImage' => $userImage
             ]);
 
 

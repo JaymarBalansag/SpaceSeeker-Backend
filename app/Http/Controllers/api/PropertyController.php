@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\PropertyRequest;
-use function PHPUnit\Framework\isEmpty;
+use PHPUnit\Framework\isEmpty;
 
 use Illuminate\Support\Facades\Storage;
 use App\Http\Requests\isSubscribingRequest;
