@@ -328,11 +328,23 @@ class PropertyController extends Controller
                     ->whereIn('property_facilities.facility_id', $facilities);
             }
 
+            if ($request->has("selectedType") && !empty($request->selectedType)) {
+                $types = (array) $request->selectedType;
+                $query->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
+                    ->whereIn('property_types.id', $types); // ✅ remove "="
+            }
+
+            if ($request->has("selectedAgreement") && !empty($request->selectedAgreement)) {
+                $agreements = (array) $request->selectedAgreement;
+                $query->whereIn('properties.agreement_type', $agreements);
+            }
+
             // Example: filter by price
             if ($request->has('min_price') && $request->has('max_price')) {
                 $query->whereBetween('properties.price', [$request->min_price, $request->max_price]);
             }
-
+            
+            
 
             $properties = $query->get();
 
@@ -351,20 +363,23 @@ class PropertyController extends Controller
     public function getTypeFilter(Request $request) {
         try {
             $query = DB::table('properties')
-                ->select('properties.*',
-                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
+                ->select(
+                    'properties.*',
+                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL 
+                            THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
+                            ELSE NULL END as image_url")
                 )
                 ->where("properties.status", "=", "active")
                 ->distinct();
 
-            if($request->has("selectedType") && !empty($request->selectedType)){
-                $types = $request->selectedType;
+            if ($request->has("selectedType") && !empty($request->selectedType)) {
+                $types = (array) $request->selectedType;
                 $query->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
-                ->whereIn('property_types.id', "=", $types);
+                    ->whereIn('property_types.id', $types); // ✅ remove "="
             }
 
-            if($request->has("selectedAgreement") && !empty($request->selectedAgreement)){
-                $agreements = $request->selectedAgreement;
+            if ($request->has("selectedAgreement") && !empty($request->selectedAgreement)) {
+                $agreements = (array) $request->selectedAgreement;
                 $query->whereIn('properties.agreement_type', $agreements);
             }
 
@@ -381,5 +396,6 @@ class PropertyController extends Controller
             ], 500);
         }
     }
+
 
 }

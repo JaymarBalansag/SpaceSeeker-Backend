@@ -28,6 +28,7 @@ Route::controller(PropertyController::class)->group(function() {
         Route::get("/property_types", "getPropertyTypes");
         Route::get("/properties", "ReadProperties");
         Route::get('/properties/filters', 'getFilteredProperty');
+        Route::get("/properties/filters/type", 'getTypeFilter');
         Route::get('/properties/{id}', 'showProperty');
         Route::get("/properties/type/{type_id}{property_id}", "getPropertyByType");
 

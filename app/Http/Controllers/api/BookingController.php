@@ -9,57 +9,100 @@ use App\Http\Requests\BookingRequest;
 use App\Http\Requests\TenantsRequest;
 use Illuminate\Support\Facades\Auth;
 
+use function Laravel\Prompts\select;
+
 class BookingController extends Controller
 {
     public function submitBookingRequest(BookingRequest $payload ) {
         try {
-            //code...
-
             $validated = $payload->validated();
             $propertyid = $validated["property_id"];
 
-            if($validated["stay_months"] == "custom"){
+            // Normalize stay_months if custom
+            if(isset($validated["stay_months"]) && $validated["stay_months"] === "custom"){
                 $validated["stay_months"] = $validated["custom_months"];
             }
 
             $userId = Auth::id();
 
-            $isOwner = DB::table("owners")
-            ->where("user_id", $userId)
-            ->first();
-
+            // Owners cannot book
+            $isOwner = DB::table("owners")->where("user_id", $userId)->first();
             if($isOwner) {
                 return response()->json([
                     "error" => "Owners cannot book properties"
                 ], 403);
             }
 
-            $property = DB::table('properties')->where('id', $propertyid)->first();
+            // Property existence
+            $property = DB::table('properties')
+            ->join("property_types", "properties.property_type_id", "=", "property_types.id")
+            ->select("properties.*", "property_types.*")
+            ->where('properties.id', $propertyid)
+            ->first();
             if(!$property) {
                 return response()->json([
                     "error" => "Property Not Found"
                 ], 404);
             }
 
+            // Duplicate booking check
             $existingBooking = DB::table('bookings')
                 ->where('user_id', $userId)
                 ->where('property_id', $propertyid)
                 ->first();
-
             if($existingBooking) {
                 return response()->json([
                     "message" => "Booking Already Exists"
                 ], 400);
             }
 
+            // 🔒 Double Validation (same as frontend)
+            if(empty($validated["agreement"])) {
+                return response()->json([
+                    "error" => "Agreement checkbox must be accepted"
+                ], 422);
+            }
+
+            if($property->type_name === "Boarding House") {
+                if(empty($validated["stay_months"]) || intval($validated["stay_months"]) <= 0) {
+                    return response()->json(["error" => "Invalid stay duration"], 422);
+                }
+                if(empty($validated["move_in_date"]) || strtotime($validated["move_in_date"]) < strtotime(date('Y-m-d'))) {
+                    return response()->json(["error" => "Invalid move-in date"], 422);
+                }
+            }
+
+            if(in_array($property->type_name, ["Apartment", "Condo", "House"])) {
+                if(empty($validated["lease_duration"]) || intval($validated["lease_duration"]) <= 0) {
+                    return response()->json(["error" => "Invalid lease duration"], 422);
+                }
+                if(empty($validated["move_in_date"]) || strtotime($validated["move_in_date"]) < strtotime(date('Y-m-d'))) {
+                    return response()->json(["error" => "Invalid move-in date"], 422);
+                }
+                if(empty($validated["occupant_num"]) || intval($validated["occupant_num"]) <= 0) {
+                    return response()->json(["error" => "Invalid number of occupants"], 422);
+                }
+            }
+
+            if($property->type_name === "Commercial Space") {
+                if(empty($validated["lease_duration"]) || intval($validated["lease_duration"]) <= 0) {
+                    return response()->json(["error" => "Invalid lease duration"], 422);
+                }
+                if(empty($validated["move_in_date"]) || strtotime($validated["move_in_date"]) < strtotime(date('Y-m-d'))) {
+                    return response()->json(["error" => "Invalid move-in date"], 422);
+                }
+                if(empty($validated["occupant_num"]) || intval($validated["occupant_num"]) <= 0) {
+                    return response()->json(["error" => "Invalid area needed"], 422);
+                }
+            }
+
+            // ✅ Passed validation, insert booking
             DB::table('bookings')->insert([
                 'user_id' => $userId,
                 'property_id' => $propertyid,
                 'status' => 'pending',
                 'created_at' => now(),
                 'updated_at' => now(),
-
-                // The Details
                 "stay_duration" => $validated["stay_months"] ?? null,
                 "occupants_num" => $validated["occupant_num"] ?? null,
                 "move_in_date" => $validated["move_in_date"] ?? null,
@@ -67,20 +110,17 @@ class BookingController extends Controller
                 "room_preference" => $validated["room_preference"] ?? null,
                 "notes" => $validated["notes"] ?? null,
                 "agreement" => $validated["agreement"] ?? null,
-
             ]);
 
             return response()->json([
                 "message" => "Booking Request Submitted Successfully"
-            ], 201);    
-            
+            ], 201);
 
         } catch (\Exception $e) {
-            //throw $th;
             return response()->json([
                 "error" => "Server Booking Error",
                 "message" => $e->getMessage()
-            ]);
+            ], 500);
         }
     }
 
