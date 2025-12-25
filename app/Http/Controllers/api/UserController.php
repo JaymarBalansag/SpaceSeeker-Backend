@@ -30,10 +30,10 @@ class UserController extends Controller
             ->update([
                 'phone_number' => $validated['phone_number'] ?? $user->phone_number,
                 'streets'      => $validated['streets'] ?? $user->streets,
-                'region_id'    => $validated['region_id'] ?? $user->region_id,
-                'province_id'  => $validated['province_id'] ?? $user->province_id,
-                'muncity_id'   => $validated['muncity_id'] ?? $user->muncity_id,
-                'barangay_id'  => $validated['barangay_id'] ?? $user->barangay_id,
+                'region_name'    => $validated['region_name'] ?? $user->region_id,
+                'state_name'  => $validated['state_name'] ?? $user->province_id,
+                'town_name'   => $validated['town_name'] ?? $user->muncity_id,
+                'village_name'  => $validated['village_name'] ?? $user->barangay_id,
                 'latitude'     => $validated['latitude'] ?? $user->latitude,
                 'longitude'    => $validated['longitude'] ?? $user->longitude,
                 'user_img'     => $path,
@@ -70,13 +70,7 @@ class UserController extends Controller
             $userid = Auth::id();
 
             $user = DB::table("users")
-            ->leftJoin("provinces", "users.province_id", "=", "provinces.id")
-            ->leftJoin("muncities", "users.muncity_id", "=", "muncities.id")
-            ->leftJoin("barangays", "users.barangay_id", "=", "barangays.id")
             ->select("users.*", 
-            "provinces.provDesc", 
-            "muncities.muncityDesc", 
-            "barangays.brgyDesc",
             DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"))
             ->where("users.id", "=", $userid)
             ->get();

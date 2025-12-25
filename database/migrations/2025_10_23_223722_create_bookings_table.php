@@ -15,6 +15,13 @@ return new class extends Migration
             $table->id();
             $table->foreignId("user_id")->constrained("users", "id")->cascadeOnDelete();
             $table->foreignId("property_id")->constrained("properties", "id")->cascadeOnDelete();
+            $table->integer('stay_duration')->nullable();
+            $table->date("move_in_date")->nullable();
+            $table->integer("occupants_num")->nullable();
+            $table->integer("lease_duration")->nullable();
+            $table->text("room_preference")->nullable();
+            $table->text("notes")->nullable();
+            $table->boolean("agreement")->default(false);
             $table->enum("status", ["pending", "approved", "rejected"])->default("pending");
             $table->timestamps();
         });

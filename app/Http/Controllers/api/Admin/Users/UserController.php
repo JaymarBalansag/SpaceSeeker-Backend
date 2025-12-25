@@ -11,11 +11,7 @@ class UserController extends Controller
     public function getAllUsers() {
         try {
             $users = DB::table("users")
-            ->leftjoin("regions", "users.region_id", "=", "regions.id")
-            ->leftjoin("provinces", "users.province_id", "=", "provinces.id")
-            ->leftjoin("muncities", "users.muncity_id", "=", "muncities.id")
-            ->leftjoin("barangays", "users.barangay_id", "=", "barangays.id")
-            ->select("users.*", "regions.regDesc", "provinces.provDesc", "muncities.muncityDesc", "brgyDesc",
+            ->select("users.*",
             DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"))
             ->get();
 
@@ -41,16 +37,8 @@ class UserController extends Controller
     public function getCompleteProfile(){
         try {
             $users = DB::table("users")
-                ->leftJoin("regions", "users.region_id", "=", "regions.id")
-                ->leftJoin("provinces", "users.province_id", "=", "provinces.id")
-                ->leftJoin("muncities", "users.muncity_id", "=", "muncities.id")
-                ->leftJoin("barangays", "users.barangay_id", "=", "barangays.id")
                 ->select(
                     "users.*",
-                    "regions.regDesc",
-                    "provinces.provDesc",
-                    "muncities.muncityDesc",
-                    "barangays.brgyDesc",
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url")
                     )
                 ->where("users.isComplete", 1) // ✅ simpler and correct
@@ -77,16 +65,8 @@ class UserController extends Controller
     public function getIncompleteProfile() {
         try {
             $users = DB::table("users")
-                ->leftJoin("regions", "users.region_id", "=", "regions.id")
-                ->leftJoin("provinces", "users.province_id", "=", "provinces.id")
-                ->leftJoin("muncities", "users.muncity_id", "=", "muncities.id")
-                ->leftJoin("barangays", "users.barangay_id", "=", "barangays.id")
                 ->select(
                     "users.*",
-                    "regions.regDesc",
-                    "provinces.provDesc",
-                    "muncities.muncityDesc",
-                    "barangays.brgyDesc"
                 )
                 ->where("users.isComplete", "=", false || 0)
                 ->get();

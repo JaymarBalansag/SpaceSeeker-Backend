@@ -23,10 +23,11 @@ return new class extends Migration
             $table->enum("role",['user','owner','admin'])->default('user');
             $table->decimal("latitude",10,8)->nullable();
             $table->decimal("longitude",11,8)->nullable();
-            $table->foreignId("region_id")->nullable()->constrained("regions")->cascadeOnDelete();
-            $table->foreignId("province_id")->nullable()->constrained("provinces")->cascadeOnDelete();
-            $table->foreignId("muncity_id")->nullable()->constrained("muncities")->cascadeOnDelete();
-            $table->foreignId("barangay_id")->nullable()->constrained("barangays")->cascadeOnDelete();
+            $table->string("region_name")->nullable();
+            $table->string("state_name")->nullable();
+            $table->string("town_name")->nullable();
+            $table->string("village_name")->nullable();
+            $table->string("streets")->nullable();
             $table->timestamp('email_verified_at')->nullable();
             $table->rememberToken();
             $table->timestamps();

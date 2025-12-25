@@ -133,12 +133,8 @@ class PropertyController extends Controller
     public function readProperties(){
         try{
             $properties = DB::table("properties")
-            ->join("regions", "properties.region_id", "=", "regions.id")
-            ->join("provinces", "properties.province_id", "=", "provinces.id")
             ->select(
                 "properties.*", 
-            "regions.regDesc", 
-            "provinces.provDesc",
             DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
             )
             ->where("properties.status", "=", "active")
@@ -170,9 +166,7 @@ class PropertyController extends Controller
             $ownerid = DB::table("owners")->where("user_id", "=", Auth::id())->first();
 
             $properties = DB::table("properties")
-            ->join("regions", "properties.region_id", "=", "regions.id")
-            ->join("provinces", "properties.province_id", "=", "provinces.id")
-            ->select("properties.*", "regions.regDesc", "provinces.provDesc",
+            ->select("properties.*",
             DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url"))
             ->where("owner_id", "=", $ownerid->id)
             ->get();

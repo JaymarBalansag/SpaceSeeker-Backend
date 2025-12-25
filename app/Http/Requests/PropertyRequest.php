@@ -53,10 +53,10 @@ class PropertyRequest extends FormRequest
             // Location
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
-            'region_id' => 'nullable|exists:regions,id',
-            'province_id' => 'nullable|exists:provinces,id',
-            'muncity_id' => 'nullable|exists:muncities,id',
-            'barangay_id' => 'nullable|exists:barangays,id',
+            'region_name' => 'nullable|string',
+            'state_name' => 'nullable|string',
+            'town_name' => 'nullable|string',
+            'village_name' => 'nullable|string',
 
             // Rules
             'rules' => 'nullable|string', 

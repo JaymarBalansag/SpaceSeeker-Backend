@@ -85,16 +85,17 @@ return new class extends Migration
             // =======================
             $table->decimal("latitude", 10, 8)->nullable();
             $table->decimal("longitude", 11, 8)->nullable();
-            $table->foreignId("region_id")->constrained("regions","id")->cascadeOnDelete()->nullable();
-            $table->foreignId("province_id")->constrained("provinces","id")->cascadeOnDelete()->nullable();
-            $table->foreignId("muncity_id")->constrained("muncities","id")->cascadeOnDelete()->nullable();
-            $table->foreignId("barangay_id")->constrained("barangays","id")->cascadeOnDelete()->nullable();
+            $table->string("region_name")->nullable();
+            $table->string("state_name")->nullable();
+            $table->string("town_name")->nullable();
+            $table->string("village_name")->nullable();
             
 
             // =======================
             // RULES & EXTRA
             // =======================
             $table->text("rules")->nullable(); // e.g., "No pets, no smoking"
+            $table->string('status')->default('pending');
             $table->timestamps();
         });
     }
