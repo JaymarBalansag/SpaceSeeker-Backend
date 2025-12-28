@@ -31,6 +31,7 @@ Route::controller(PropertyController::class)->group(function() {
         Route::get("/properties/filters/type", 'getTypeFilter');
         Route::get('/properties/{id}', 'showProperty');
         Route::get("/properties/type/{type_id}{property_id}", "getPropertyByType");
+        Route::get("/property/search/{query}/page/{page}", "searchProperty");
 
 
 });

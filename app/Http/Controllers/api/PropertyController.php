@@ -131,19 +131,27 @@ class PropertyController extends Controller
     }
 
     public function readProperties(){
-        try{
+        try {
             $properties = DB::table("properties")
-            ->select(
-                "properties.*", 
-            DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-            )
-            ->where("properties.status", "=", "active")
-            ->get();
+                ->select(
+                    "properties.*",
+                    DB::raw("
+                        CASE 
+                            WHEN properties.thumbnail IS NOT NULL 
+                            THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
+                            ELSE NULL 
+                        END as image_url
+                    ")
+                )
+                ->where("properties.status", "active")
+                ->paginate(6); // ✅ pagination here
 
-            if($properties->isEmpty()){
+            // ❗ paginate() never returns empty collection directly
+            if ($properties->total() === 0) {
                 return response()->json([
                     "message" => "Please add a property",
-                ], 404);
+                    "properties" => $properties
+                ], 200);
             }
 
             return response()->json([
@@ -151,12 +159,13 @@ class PropertyController extends Controller
                 "properties" => $properties
             ], 200);
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return response()->json([
                 'message' => "Error getting property: " . $e->getMessage(),
             ], 500);
         }
     }
+
 
     // * READ PROPERTIES FOR Owner
 
@@ -340,7 +349,7 @@ class PropertyController extends Controller
             
             
 
-            $properties = $query->get();
+            $properties = $query->paginate(6);
 
             return response()->json([
                 'message' => 'Filtered properties fetched successfully',
@@ -390,6 +399,54 @@ class PropertyController extends Controller
             ], 500);
         }
     }
+
+    public function searchProperty($query, $page = 1){
+        try {
+
+            // return response()->json([
+            //     'message' => 'Search query received',
+            //     'search' => $query,
+            //     'page' => $page,
+            // ]);
+
+            $page = $page ?? 1;
+            $search = trim($query);
+
+            
+
+            $query = DB::table('properties')
+                ->select(
+                    'properties.*',
+                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL 
+                            THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
+                            ELSE NULL END as image_url")
+                )
+                ->where('properties.status', 'active');
+
+            $query->where(function ($q) use ($search) {
+                $q->where('properties.title', 'LIKE', "%{$search}%")
+                ->orWhere('properties.region_name', 'LIKE', "%{$search}%")
+                ->orWhere('properties.state_name', 'LIKE', "%{$search}%")
+                ->orWhere('properties.town_name', 'LIKE', "%{$search}%")
+                ->orWhere('properties.village_name', 'LIKE', "%{$search}%");
+            });
+
+            // return response()->json([ 'sql' => $query->toSql(), 'bindings' => $query->getBindings(), ]);
+
+            $properties = $query->paginate(6, ['*'], 'page', $page);
+
+            return response()->json([
+                'message' => 'Properties fetched',
+                'properties' => $properties
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error searching properties: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 }
