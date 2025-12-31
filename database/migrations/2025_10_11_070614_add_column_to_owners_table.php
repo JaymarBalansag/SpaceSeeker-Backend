@@ -23,8 +23,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('owners', function (Blueprint $table) {
-            $table->foreignId('active_subscription_id')->nullable()->constrained('subscriptions','id')->nullOnDelete()->after("user_id");
-
+            $table->dropForeign(['active_subscription_id']);
+            $table->dropColumn('active_subscription_id');
         });
     }
 };

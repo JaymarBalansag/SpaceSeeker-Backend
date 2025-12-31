@@ -29,7 +29,7 @@ return new class extends Migration
             
             // Payment + Status
             $table->string('payment_reference')->nullable(); // from PayMongo or manual
-            $table->enum('status', ['active', 'expired', 'cancelled', 'pending, failed'])->default('pending');
+            $table->enum('status', ['active', 'expired', 'cancelled', 'pending', 'failed'])->default('pending');
             
             // Other optional fields
             $table->integer('listing_limit')->default(5); // how many properties allowed

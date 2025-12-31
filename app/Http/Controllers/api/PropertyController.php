@@ -263,6 +263,8 @@ class PropertyController extends Controller
                     'amenities' => $amenities,
                     'facilities' => $facilities,
                     'images' => $images,
+                    'latitude' => $property->latitude,
+                    'longitude' => $property->longitude,
                 ],
                 'message' => 'Property details fetched successfully'
             ]);

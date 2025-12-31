@@ -21,9 +21,11 @@ return [
 
     'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:5173')],
 
+    // comment when using on delpoyment 
     'allowed_origins_patterns' => ["*localhost*"],
 
-    'allowed_headers' => ['Content-Type', 'X-Requested-With', 'Authorization', 'X-CSRF-TOKEN'],
+    'allowed_headers' => ['*'],
+    // 'allowed_headers' => ['Content-Type', 'X-Requested-With', 'Authorization', 'X-CSRF-TOKEN'],
 
     'exposed_headers' => [],
 
