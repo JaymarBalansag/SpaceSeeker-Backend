@@ -2,18 +2,19 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\api\AuthController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\UserPreference;
+use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\TenantsController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PropertyController;
+use App\Http\Controllers\Api\RecommendedController;
 use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
-use App\Http\Controllers\Api\BookingController;
-use App\Http\Controllers\Api\TenantsController;
-use App\Http\Controllers\Api\UserPreference;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -36,10 +37,21 @@ Route::controller(PropertyController::class)->group(function() {
 
 });
 
+Route::controller(RecommendedController::class)->group(function() {
+    Route::get("/default", "byDefault");
+    Route::get("/recent", "recentProperties");
+});
+
 
 
 Route::middleware("auth:sanctum")->group(function(){
 
+    Route::controller(RecommendedController::class)->group(function() {
+        Route::get("/nearby", "byNearYou");
+        Route::get("/prefferedAmenities", "byPreferredAmenities");
+        Route::get("/prefferedTypes", "byPrefferedTypes");
+        Route::get("/popularTypes", "byPopularTypes");
+    });
 
     // Route::get('/user', function (Request $request) {
     //     return $request->user();
