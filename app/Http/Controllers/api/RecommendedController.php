@@ -116,7 +116,7 @@ class RecommendedController extends Controller
         try {
             $user = Auth::user();
 
-            $preferredTypeIds = DB::table('preffered_properties')
+            $preferredTypeIds = DB::table('preferred_properties')
                 ->where('user_id', $user->id)
                 ->pluck('property_type_id');
 
@@ -130,7 +130,7 @@ class RecommendedController extends Controller
                 ->limit(6)
                 ->get();
 
-            if(!$properties && $properties->isEmpty()){
+            if ($properties->isEmpty()) {
                 return response()->json([
                     'status' => 'success',
                     'data' => [],

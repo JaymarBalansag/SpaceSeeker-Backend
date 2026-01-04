@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Requests\ChangePasswordRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\PasswordVerificationRequest;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\ProfileCompletionRequest;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
 {
@@ -101,6 +105,64 @@ class UserController extends Controller
         } catch (\Exception $e) {
            return response()->json([
                 'message' => 'Error getting user ID: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function verifyPassword(PasswordVerificationRequest $request) {
+        try {
+            $validated = $request->validated();
+            //code...
+            $user = Auth::user();
+
+            if(Hash::check($validated['current_password'], $user->password)){
+                return response()->json([
+                    'message' => 'Password verified successfully',
+                    'verified' => true
+                ], 200);
+            } else {
+                return response()->json ([
+                    'message' => 'Password verification failed',
+                    'verified' => false
+                ], 401);
+            }
+
+        } catch (\Throwable $th) {
+            //throw $th;
+            return response()->json([
+                'message' => 'Error verifying password: ' . $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function changePassword(ChangePasswordRequest $request){
+        try {
+            $validated = $request->validated();
+
+            if($validated['new_password'] !== $validated['confirm_password']){
+                return response()->json([
+                    'message' => 'New password and confirm password do not match',
+                ], 400);
+            }
+
+            //code...
+            $user = Auth::user();
+
+            DB::table('users')
+            ->where('id', $user->id)
+            ->update([
+                'password' => Hash::make($validated['new_password']),
+                'updated_at' => Carbon::now(),
+            ]);
+
+            return response()->json([
+                'message' => 'Password changed successfully',
+            ], 200);
+
+        } catch (\Throwable $th) {
+            //throw $th;
+            return response()->json([
+                'message' => 'Error changing password: ' . $th->getMessage(),
             ], 500);
         }
     }

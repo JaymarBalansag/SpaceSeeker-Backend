@@ -61,6 +61,8 @@ Route::middleware("auth:sanctum")->group(function(){
         Route::post("/profile_completion", "completeProfile");
         Route::get("/user", "getUser");
         Route::get("/UID", "getUserID");
+        Route::post("/verify-password", "verifyPassword");
+        Route::post("/change-password", "changePassword");
     });
 
 
