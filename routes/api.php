@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\RecommendedController;
 use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
+use App\Http\Controllers\Api\SubscriptionController;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -66,6 +67,9 @@ Route::middleware("auth:sanctum")->group(function(){
         Route::post("/change-password", "changePassword");
     });
 
+    Route::controller(SubscriptionController::class)->group(function() {
+        Route::get("/listing-limit", "getPropertyLimit");
+    });
 
     Route::controller(AuthController::class)->group(function(){
         Route::post("/logout", "logout");

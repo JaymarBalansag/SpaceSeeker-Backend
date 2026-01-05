@@ -16,6 +16,7 @@ class RecommendedController extends Controller
                 ->select('properties.*',
                 DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
+                ->where("status", "=", "active")
                 ->inRandomOrder()
                 ->limit(6)
                 ->get();
@@ -52,6 +53,7 @@ class RecommendedController extends Controller
                 DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
                 ->where("properties.town_name", $user->town_name)
+                ->where("status", "=", "active")
                 ->inRandomOrder()
                 ->limit(6)
                 ->get();
@@ -81,6 +83,7 @@ class RecommendedController extends Controller
             $properties = DB::table('properties')
                 ->join('property_amenities', 'property_amenities.property_id', '=', 'properties.id')
                 ->whereIn('property_amenities.amenity_id', $preferredAmenityIds)
+                ->where("properties.status", "=", "active")
                 ->select('properties.*', 
                 DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
@@ -122,6 +125,7 @@ class RecommendedController extends Controller
 
             $properties = DB::table('properties')
                 ->whereIn('properties.property_type_id', $preferredTypeIds)
+                ->where("properties.status", "=", "active")
                 ->select('properties.*',
                 DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
@@ -187,6 +191,7 @@ class RecommendedController extends Controller
                     ")
                 )
                 ->where('properties.town_name', $user->town_name)
+                ->where("properties.status", "=", "active")
                 ->having('distance', '<=', $radius)
                 ->orderBy('distance')
                 ->limit(6)
@@ -198,6 +203,7 @@ class RecommendedController extends Controller
                         DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                     )
                     ->where('properties.town_name', $user->town_name)
+                    ->where("properties.status", "=", "active")
                     ->inRandomOrder()
                     ->limit(6)
                     ->get();
@@ -231,6 +237,7 @@ class RecommendedController extends Controller
                 ->select('properties.*',
                 DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
+                ->where("properties.status", "=", "active")
                 ->orderBy('created_at', 'desc')
                 ->limit(3)
                 ->get();
@@ -267,6 +274,7 @@ class RecommendedController extends Controller
                     'property_types.type_name',
                     DB::raw('COUNT(properties.id) as total')
                 )
+                ->where("properties.status", "=", "active")
                 ->groupBy('property_types.id', 'property_types.type_name')
                 ->orderByDesc('total')
                 ->limit(4)
