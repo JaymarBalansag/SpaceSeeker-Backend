@@ -2,15 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Requests\ChangePasswordRequest;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\PasswordVerificationRequest;
 use Illuminate\Support\Facades\Auth;
-use App\Http\Requests\ProfileCompletionRequest;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
+use App\Http\Requests\ChangePasswordRequest;
+use App\Http\Requests\ProfileCompletionRequest;
+use App\Http\Requests\PasswordVerificationRequest;
+use App\Http\Requests\updateUserProfileRequest;
 
 class UserController extends Controller
 {
@@ -66,6 +68,72 @@ class UserController extends Controller
         }
 
         
+    }
+
+    public function updateProfile(UpdateUserProfileRequest $request){
+        try {
+            $validated = $request->validated();
+            $user = Auth::user();
+
+            /** 🔹 Get old image BEFORE update */
+            $oldImage = DB::table('users')
+                ->where('id', $user->id)
+                ->value('user_img');
+
+            $updateData = [
+                'first_name'   => $validated['first_name'],
+                'last_name'    => $validated['last_name'],
+                'phone_number' => $validated['phone_number'] ?? null,
+                'updated_at'   => now(),
+            ];
+
+            /** 🔹 Handle Image Replacement */
+            if ($request->hasFile('user_img')) {
+
+                // Delete old image if exists
+                if ($oldImage && Storage::disk('public')->exists($oldImage)) {
+                    Storage::disk('public')->delete($oldImage);
+                }
+
+                // Store new image
+                $path = $request->file('user_img')
+                    ->store('profile_images', 'public');
+
+                $updateData['user_img'] = $path;
+            }
+
+            DB::table('users')
+                ->where('id', $user->id)
+                ->update($updateData);
+
+            /** 🔹 Return updated user */
+            $updatedUser = DB::table('users')
+                ->select(
+                    'id',
+                    'first_name',
+                    'last_name',
+                    DB::raw("
+                        CASE 
+                            WHEN user_img IS NOT NULL 
+                            THEN CONCAT('" . asset('storage') . "/', user_img)
+                            ELSE NULL 
+                        END AS user_img_url
+                    ")
+                )
+                ->where('id', $user->id)
+                ->first();
+
+            return response()->json([
+                'message' => 'Profile updated successfully',
+                'user'    => $updatedUser
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error updating profile',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function getUser(){
@@ -166,5 +234,7 @@ class UserController extends Controller
             ], 500);
         }
     }
+
+    
 
 }
