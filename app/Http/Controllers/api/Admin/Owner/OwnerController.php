@@ -13,7 +13,7 @@ class OwnerController extends Controller
 
             $owner = DB::table('owners')
             ->join("users", "users.id", "=", "owners.user_id")
-            ->join('subscriptions', 'subscriptions.id', '=', 'owners.active_subscription_id')
+            ->join('subscriptions', 'subscriptions.owner_id', '=', 'owners.id')
             ->select('owners.*', 'users.first_name', 'users.last_name', 'users.email', 'subscriptions.status', 'subscriptions.created_at')
             ->get();
 

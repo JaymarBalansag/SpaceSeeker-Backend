@@ -46,6 +46,9 @@ Route::controller(RecommendedController::class)->group(function() {
 
 
 Route::middleware("auth:sanctum")->group(function(){
+    Route::get("/me", function(Request $request){
+        return response()->json($request->user());
+    });
 
     Route::controller(RecommendedController::class)->group(function() {
         Route::get("/nearby", "byNearYou");
@@ -53,10 +56,6 @@ Route::middleware("auth:sanctum")->group(function(){
         Route::get("/prefferedTypes", "byPrefferedTypes");
         Route::get("/popularTypes", "byPopularTypes");
     });
-
-    // Route::get('/user', function (Request $request) {
-    //     return $request->user();
-    // });
 
     Route::controller(UserController::class)->group(function(){
         Route::post("/profile_completion", "completeProfile");
