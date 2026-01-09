@@ -37,14 +37,17 @@ class PropertyRequest extends FormRequest
             'renewal_option' => 'nullable|string',
             'notice_period' => 'nullable|integer|min:0',
             'has_curfew' => 'nullable|boolean',
-            'curfew_time' => 'nullable|date_format:H:i',
+            'curfew_from' => 'nullable|date_format:H:i',
+            'curfew_to' => 'nullable|date_format:H:i',
 
             // Property Features
             'property_type_id' => 'required|exists:property_types,id',
             'furnishing' => 'nullable|in:unfurnished,semi-furnished,fully-furnished',
-            'parking' => 'nullable|boolean',
             'bedrooms' => 'nullable|integer|min:0',
-            'bathrooms' => 'nullable|integer|min:0',
+            'single_bed' => 'nullable|integer|min:0',
+            'double_bed' => 'nullable|integer|min:0',
+            'public_bath' => 'nullable|integer|min:0',
+            'private_bath' => 'nullable|integer|min:0',
             'bed_space' => 'nullable|integer|min:0',
             'floor_area' => 'nullable|numeric|min:0',
             'lot_area' => 'nullable|numeric|min:0',
@@ -60,6 +63,8 @@ class PropertyRequest extends FormRequest
 
             // Rules
             'rules' => 'nullable|string', 
+
+            
         ];
     }
 }

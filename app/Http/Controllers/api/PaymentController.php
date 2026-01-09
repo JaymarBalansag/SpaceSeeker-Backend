@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
+use GuzzleHttp\Client;
+
 
 class PaymentController extends Controller
 {
@@ -103,6 +105,101 @@ class PaymentController extends Controller
             ], 500);
         }
     }
+
+    public function subscribe(Request $request){
+        try {
+            
+            $request->validate(['plan' => 'required|in:Monthly,Annual']);
+
+            $amount = $request->plan === 'Monthly' ? 50000 : 500000; // in centavos
+
+
+
+            $subscriptionId = DB::table("subscriptions")
+            ->insertGetId([
+                "user_id" => Auth::id(),
+                'plan_name' => $request->plan,
+                'payment_method' => "qr_ph",
+                'amount' => $amount,
+                'status' => 'pending',
+            ]);
+
+
+            // 2️⃣ Call PayMongo API to create QR source
+            $client = new Client();
+            $response = $client->post('https://api.paymongo.com/v1/sources', [
+                'auth' => [env('PAYMONGO_SECRET_KEY'), ''],
+                'json' => [
+                    'data' => [
+                        'attributes' => [
+                            'type' => 'qr_ph', // use 'paymaya' if needed
+                            'amount' => $amount,
+                            'currency' => 'PHP',
+                            'redirect' => [
+                                'success' => config('app.url') . '/payment/success',
+                                'failed'  => config('app.url') . '/payment/failed',
+                            ],
+                            'metadata' => [
+                                'subscription_id' => $subscriptionId,
+                                'user_id' => Auth::id()
+                            ]
+                        ]
+                    ]
+                ]
+            ]);
+
+            $data = json_decode($response->getBody(), true);
+            $qrUrl = $data['data']['attributes']['redirect']['checkout_url'];
+            $sourceId = $data['data']['id'];
+
+            // 3️⃣ Save PayMongo source ID
+            $subscription = DB::table("subscriptions")
+            ->where("id", "=", $subscriptionId)
+            ->update([
+                "payment_source_id" => $sourceId
+            ]);
+
+            return response()->json([
+                'qr_url' => $qrUrl,
+                'subscription_id' => $subscriptionId
+            ]);
+        } catch (\Throwable $th) {
+            throw $th;
+        }
+    }
+
+    public function webhook(Request $request){
+        $payload = $request->all();
+
+        // Check if event is a QR payment ready to be charged
+        if (isset($payload['type']) && $payload['type'] === 'source.chargeable') {
+
+            $subscriptionId = $payload['data']['attributes']['metadata']['subscription_id'];
+
+            // Get the subscription record
+            $subscription = DB::table("subscriptions")
+                ->select("id", "plan_name")
+                ->where("id", $subscriptionId)
+                ->first();
+
+            if ($subscription) {
+                $start_date = now();
+                $end_date = $subscription->plan_name === 'Monthly' ? now()->addMonth() : now()->addYear();
+
+                // Update subscription status and dates
+                DB::table("subscriptions")
+                    ->where("id", $subscription->id)
+                    ->update([
+                        "status" => "active",
+                        "start_date" => $start_date,
+                        "end_date" => $end_date
+                    ]);
+            }
+        }
+
+        return response()->json(['received' => true]);
+    }
+
 
     
 }
