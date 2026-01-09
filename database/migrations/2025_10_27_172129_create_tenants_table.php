@@ -21,8 +21,8 @@ return new class extends Migration
             $table->integer('lease_duration')->nullable();
             $table->text('room_preference')->nullable();
             $table->text('notes')->nullable();
-            $table->boolean('agreement')->required()->default(false);
-            $table->enum("status", ["active", "inactive"])->default("active");
+            $table->boolean('agreement')->default(false);
+            $table->enum("status", ["active", "inactive"])->default("inactive");
             $table->timestamps();
         });
     }

@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('password');
             $table->boolean('isComplete')->default(false);
             $table->string("user_img")->nullable();
-            $table->enum("role",['user','owner','admin'])->default('user');
+            $table->enum("role",['user','owner','admin','tenants'])->default('user');
             $table->decimal("latitude",10,8)->nullable();
             $table->decimal("longitude",11,8)->nullable();
             $table->string("region_name")->nullable();

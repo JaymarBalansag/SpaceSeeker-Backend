@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Auth;
 
 class PropertyService
 {
-    public function create(array $validated, $thumbnail = null, $images = [], $amenities = [], $facilities = [], $utilities = [])
+    public function create(array $validated, $thumbnail = null, $images = [], $amenities = [], $facilities = [], $utilities = [], $custom_utilities, $custom_amenities, $custom_facilities)
     {
         DB::beginTransaction();
 
@@ -32,13 +32,16 @@ class PropertyService
                 'renewal_option' => $validated['renewal_option'] ?? null,
                 'notice_period' => $validated['notice_period'] ?? null,
                 'has_curfew' => $validated['has_curfew'] ?? false,
-                'curfew_time' => $validated['curfew_time'] ?? null,
+                'curfew_from' => $validated['curfew_from'] ?? null,
+                'curfew_to' => $validated['curfew_to'] ?? null,
                 'property_type_id' => $validated['property_type_id'],
                 'furnishing' => $validated['furnishing'] ?? null,
-                'parking' => $validated['parking'] ?? false,
                 'is_available' => false,
                 'bedrooms' => $validated['bedrooms'] ?? null,
-                'bathrooms' => $validated['bathrooms'] ?? null,
+                'single_bed' => $validated['single_bed'] ?? null,
+                'double_bed' => $validated['double_bed'] ?? null,
+                'public_bath' => $validated['public_bath'] ?? null,
+                'private_bath' => $validated['private_bath'] ?? null,
                 'bed_space' => $validated['bed_space'] ?? null,
                 'floor_area' => $validated['floor_area'] ?? null,
                 'lot_area' => $validated['lot_area'] ?? null,
@@ -75,6 +78,15 @@ class PropertyService
                 ]);
             }
 
+            foreach ($custom_amenities as $custom_amenity) {
+                DB::table("custom_amenities")->insert([
+                    'property_id' => $propertyId,
+                    'custom_amenity' => $custom_amenity,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
             // Facilities
             foreach ($facilities as $facilityId) {
                 DB::table('property_facilities')->insert([
@@ -85,11 +97,29 @@ class PropertyService
                 ]);
             }
 
+            foreach ($custom_facilities as $custom_facility) {
+                DB::table("custom_facilities")->insert([
+                    'property_id' => $propertyId,
+                    'custom_facility' => $custom_facility,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
             // Utilities
             foreach ($utilities as $utilityId) {
                 DB::table('utilities')->insert([
                     'utility_name' => $utilityId,
                     'property_id' => $propertyId,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
+
+            foreach ($custom_utilities as $custom_utility) {
+                DB::table("custom_utilities")->insert([
+                    'property_id' => $propertyId,
+                    'custom_utility' => $custom_utility,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);

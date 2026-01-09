@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\BillingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\OwnerController;
 
 Route::controller(AuthController::class)->group(function(){
     Route::post("/login", "login");
@@ -43,11 +45,18 @@ Route::controller(RecommendedController::class)->group(function() {
     Route::get("/recent", "recentProperties");
 });
 
+Route::post('/paymongo/webhook', [SubscriptionController::class, "webhook"]);
 
 
 Route::middleware("auth:sanctum")->group(function(){
     Route::get("/me", function(Request $request){
         return response()->json($request->user());
+    });
+
+    Route::controller(BillingController::class)->group(function() {
+        Route::get("/billings", "getBillings");
+        Route::get("/owner/payments", "getPayments");
+        Route::post("/owner/payments/{paymentId}/verify", "verifyPayment");
     });
 
     Route::controller(RecommendedController::class)->group(function() {
@@ -92,6 +101,7 @@ Route::middleware("auth:sanctum")->group(function(){
 
     Route::controller(PaymentController::class)->group(function() {
         Route::post("/payment/confirm", 'confirm');
+        Route::post("/subscribe", "subscribe");
     });
 
     Route::controller(LocationController::class)->group(function(){
@@ -106,11 +116,15 @@ Route::middleware("auth:sanctum")->group(function(){
         Route::get("/bookings/pending", "getPendingUserBookings");
 
         Route::post('/bookings/{booking_id}/approve', 'approveBooking');
+
     });
 
     Route::controller(TenantsController::class)->group(function() {
         Route::get("/tenants/property/{propertyId}", "SelectTenantsByProperty");
         Route::get("/tenants", "getAllTenants");
+        Route::post('/tenants/{id}/move-in', "moveInTenant");
+        Route::get("/my-billings", "getMyBillings");
+        Route::post("/submit-payment-records", "submitPayment");
     });
 
     Route::controller(MessageController::class)->group(function() {

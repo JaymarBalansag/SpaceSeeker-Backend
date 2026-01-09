@@ -99,7 +99,11 @@ class PropertyController extends Controller
             $amenities = $request->input('property_amenities', []);
             $facilities = $request->input('property_facilities', []);
 
+            $customAmenities = $request->input('custom_amenities', []);
+            $customFacilities = $request->input('custom_facilities', []);
+
             $utilities = $request->input('utilities', []);
+            $customUtilities = $request->input('custom_utilities', []);
             if(!empty($utilities)){
                 $validated['utilities_included'] = true;
             } else {
@@ -113,7 +117,11 @@ class PropertyController extends Controller
                 $imagePaths,
                 $amenities,
                 $facilities,
-                $utilities
+                $utilities,
+                $customUtilities,
+                $customAmenities,
+                $customFacilities,
+                
             );
 
             return response()->json([
