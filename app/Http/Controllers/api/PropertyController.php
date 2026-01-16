@@ -152,7 +152,8 @@ class PropertyController extends Controller
                     ")
                 )
                 ->where("properties.status", "active")
-                ->paginate(6); // ✅ pagination here
+                ->paginate(4); // ✅ pagination here
+
 
             // ❗ paginate() never returns empty collection directly
             if ($properties->total() === 0) {
@@ -220,7 +221,6 @@ class PropertyController extends Controller
                     'users.id as owner_id', 
                     'users.first_name as owner_first_name',
                     'users.last_name as owner_last_name',
-                    'subscriptions.plan_name',
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img"),
                     'property_types.id as type_id',
                     'property_types.type_name',
@@ -263,7 +263,7 @@ class PropertyController extends Controller
                     'title' => $property->title,
                     'description' => $property->description,
                     'price' => $property->price,
-                    'payment_frequency' => $property->plan_name,
+                    'payment_frequency' => $property->payment_frequency,
                     'agreement_type' => $property->agreement_type,
                     'type_id' => $property->type_id,
                     'type_name' => $property->type_name,
@@ -315,51 +315,62 @@ class PropertyController extends Controller
         }
     }
 
-    public function getFilteredProperty(Request $request)
-    {
-        // dd($request->all());
+    public function getFilteredProperty(Request $request){
         try {
             $query = DB::table('properties')
                 ->select('properties.*',
-                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
+                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL 
+                            THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
+                            ELSE NULL END as image_url")
                 )
-                ->where("properties.status", "=", "active")
-                ->distinct();
+                ->where("properties.status", "=", "active");
 
-            // Filter by amenities
-            if ($request->has('amenities') && !empty($request->amenities)) {
+            // 1. Filter by Amenities (using subquery to avoid row duplication)
+            if ($request->filled('amenities')) {
                 $amenities = is_array($request->amenities) ? $request->amenities : explode(',', $request->amenities);
-
-                $query->join('property_amenities', 'properties.id', '=', 'property_amenities.property_id')
+                
+                $query->whereExists(function ($q) use ($amenities) {
+                    $q->select(DB::raw(1))
+                    ->from('property_amenities')
+                    ->whereRaw('property_amenities.property_id = properties.id')
                     ->whereIn('property_amenities.amenity_id', $amenities);
+                });
             }
-            
-            if ($request->has('facilities') && !empty($request->facilities)) {
+
+            // 2. Filter by Facilities
+            if ($request->filled('facilities')) {
                 $facilities = is_array($request->facilities) ? $request->facilities : explode(',', $request->facilities);
-
-                $query->join('property_facilities', 'properties.id', '=', 'property_facilities.property_id')
+                
+                $query->whereExists(function ($q) use ($facilities) {
+                    $q->select(DB::raw(1))
+                    ->from('property_facilities')
+                    ->whereRaw('property_facilities.property_id = properties.id')
                     ->whereIn('property_facilities.facility_id', $facilities);
+                });
             }
 
-            if ($request->has("selectedType") && !empty($request->selectedType)) {
+            // 3. Property Type
+            if ($request->filled('selectedType')) {
                 $types = (array) $request->selectedType;
-                $query->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
-                    ->whereIn('property_types.id', $types); // ✅ remove "="
+                $query->whereIn('properties.property_type_id', $types);
             }
 
-            if ($request->has("selectedAgreement") && !empty($request->selectedAgreement)) {
+            // 4. Agreement Type
+            if ($request->filled('selectedAgreement')) {
                 $agreements = (array) $request->selectedAgreement;
                 $query->whereIn('properties.agreement_type', $agreements);
             }
 
-            // Example: filter by price
-            if ($request->has('min_price') && $request->has('max_price')) {
-                $query->whereBetween('properties.price', [$request->min_price, $request->max_price]);
+            // 5. Independent Price Filters (One or both can be present)
+            if ($request->filled('min_price')) {
+                $query->where('properties.price', '>=', $request->min_price);
             }
-            
-            
+            if ($request->filled('max_price')) {
+                $query->where('properties.price', '<=', $request->max_price);
+            }
 
-            $properties = $query->paginate(6);
+            // Final Paginate
+            $properties = $query->paginate(4);
 
             return response()->json([
                 'message' => 'Filtered properties fetched successfully',
@@ -368,7 +379,7 @@ class PropertyController extends Controller
 
         } catch (\Exception $e) {
             return response()->json([
-                'message' => "Error fetching filtered properties: " . $e->getMessage()
+                'message' => "Error fetching properties: " . $e->getMessage()
             ], 500);
         }
     }

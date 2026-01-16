@@ -53,26 +53,32 @@ class BillingController extends Controller
 
     public function getPayments()
     {
+        $userId = Auth::id();
+        $ownerId = DB::table("owners")
+        ->where("user_id", "=", $userId)
+        ->value("id");
+
         $payments = DB::table('payments')
         ->join('billings', 'payments.billing_id', '=', 'billings.id')
         ->join('tenants', 'billings.tenant_id', '=', 'tenants.id')
         ->join('users', 'tenants.user_id', '=', 'users.id')
-            ->join('properties', 'billings.property_id', '=', 'properties.id')
-            ->select(
-                'payments.*',
-                'users.first_name', 'users.last_name',
-                'billings.rent_cycle',
-                'properties.title as property_title',
-                DB::raw("
-                        CASE 
-                            WHEN payments.proof IS NOT NULL 
-                            THEN CONCAT('" . asset('storage') . "/', payments.proof) 
-                            ELSE NULL 
-                        END as proof
-                    ")
-            )
-            ->orderBy('payments.created_at', 'desc')
-            ->get();
+        ->join('properties', 'billings.property_id', '=', 'properties.id')
+        ->where('properties.owner_id', $ownerId)
+        ->select(
+            'payments.*',
+            'users.first_name', 'users.last_name',
+            'billings.rent_cycle',
+            'properties.title as property_title',
+            DB::raw("
+                    CASE 
+                        WHEN payments.proof IS NOT NULL 
+                        THEN CONCAT('" . asset('storage') . "/', payments.proof) 
+                        ELSE NULL 
+                    END as proof
+                ")
+        )
+        ->orderBy('payments.created_at', 'desc')
+        ->get();
 
         return response()->json(['data' => $payments]);
     }
