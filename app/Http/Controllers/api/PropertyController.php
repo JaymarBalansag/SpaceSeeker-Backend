@@ -9,9 +9,9 @@ use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Requests\PropertyRequest;
-use PHPUnit\Framework\isEmpty;
 
 use Illuminate\Support\Facades\Storage;
+use Laravel\Sanctum\PersonalAccessToken;
 use App\Http\Requests\isSubscribingRequest;
 
 class PropertyController extends Controller
@@ -71,9 +71,49 @@ class PropertyController extends Controller
         ],200);
     }
 
-    protected $propertyService;
+    public function getCategoryCounts(){
+        try {
+            $count = DB::table('property_types')
+                ->leftJoin('properties', 'properties.property_type_id', '=', 'property_types.id')
+                ->select(
+                    'property_types.id',
+                    'property_types.type_name',
+                    DB::raw('COUNT(properties.id) as total')
+                )
+                ->groupBy('property_types.id', 'property_types.type_name')
+                ->get();
 
-    
+            $propertyCount = DB::table('properties')->count();
+            
+            $tenantCount = DB::table('tenants')->count();
+
+            if($count->isEmpty()){
+                return response()->json([
+                    'status' => 'success',
+                    'data' => [],
+                    'message' => 'No property found.'
+                ]);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $count,
+                'propertyCount' => $propertyCount,
+                'tenantCount' => $tenantCount,
+                'message' => 'Property Count retrieved successfully.'
+            ]);
+
+        } catch (\Throwable $th) {
+
+            return response()->json([
+                'error' => $th->getMessage(),
+                'file' => $th->getFile(),
+                'line' => $th->getLine(),
+            ], 500);
+        }
+    }
+
+    protected $propertyService;
 
     // Create Property
     public function createProperty(PropertyRequest $request)
@@ -173,6 +213,46 @@ class PropertyController extends Controller
                 'message' => "Error getting property: " . $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function recordView(Request $request, $propertyId){
+        // Get the property + owner
+        $property = DB::table('properties')
+            ->select('id', 'owner_id')
+            ->where('id', $propertyId)
+            ->first();
+
+        if (!$property) {
+            return response()->json(['error' => 'Property not found'], 404);
+        }
+
+        $userId = null;
+        $bearer = $request->bearerToken(); // Authorization: Bearer TOKEN
+        if ($bearer) {
+            $token = PersonalAccessToken::findToken($bearer);
+            if ($token) {
+                $userId = $token->tokenable_id; // logged-in user's ID
+            }
+        }
+
+        if ($userId) {
+            // Get the owner's user_id of this property
+            $ownerUserId = DB::table('owners')
+                ->where('id', $property->owner_id)
+                ->value('user_id'); // just get the user_id
+
+            // If current user is the owner → ignore
+            if ($ownerUserId == $userId) {
+                return response()->json(['ignored' => true]);
+            }
+        }
+
+        // Guest or non-owner → increment views
+        DB::table('properties')
+            ->where('id', $propertyId)
+            ->increment('views');
+
+        return response()->json(['success' => true]);
     }
 
 
@@ -467,6 +547,184 @@ class PropertyController extends Controller
             ], 500);
         }
     }
+
+
+    // This is for editing property
+    // For Owner
+    public function editProperty(int $id){
+        try {
+            $userId = Auth::id();
+            
+            // 1. Get owner ID
+            $ownerId = DB::table("owners")->where("user_id", $userId)->value("id");
+
+            // 2. Fetch the main property data (one row)
+            $property = DB::table("properties")
+                ->join("property_types", "properties.property_type_id", "=", "property_types.id")
+                ->select("properties.*", "property_types.type_name")
+                ->where("properties.id", $id)
+                ->where("properties.owner_id", $ownerId)
+                ->first();
+
+            if (!$property) {
+                return response()->json(['message' => 'Property not found or unauthorized'], 404);
+            }
+
+            // Format the thumbnail URL in PHP (More readable and easier to debug)
+            $property->thumbnail_url = $property->thumbnail 
+                ? asset('storage/' . $property->thumbnail) 
+                : null;
+
+            // 3. Fetch related data as clean arrays for your Vue checkboxes
+            $property->amenities = DB::table("property_amenities")
+                ->where("property_id", $id)->pluck("amenity_id");
+            $property->custom_amenities = DB::table("custom_amenities")
+                ->where("property_id", $id)->pluck("custom_amenity");
+
+            $property->facilities = DB::table("property_facilities")
+                ->where("property_id", $id)->pluck("facility_id");
+            $property->custom_facilities = DB::table("custom_facilities")
+                ->where("property_id", $id)->pluck("custom_facility");
+
+            $property->utilities = DB::table("utilities")
+                ->where("property_id", $id)->pluck("utility_name");
+            $property->custom_utilities = DB::table("custom_utilities")
+                ->where("property_id", $id)->pluck("custom_utility");
+
+            // 4. Handle Images and format URLs
+            $images = DB::table("property_images")
+                ->where("property_id", $id)
+                ->pluck("img_path");
+
+            $property->images = $images->map(function ($path) {
+                return asset('storage/' . $path);
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'property' => $property
+            ]);
+
+        } catch (\Throwable $th) {
+            return response()->json(['error' => $th->getMessage()], 500);
+        }
+    }
+
+    public function updateProperty(Request $request, int $id){
+        DB::beginTransaction();
+        try {
+            $userId = Auth::id();
+            $ownerId = DB::table("owners")->where("user_id", $userId)->value("id");
+
+            // 1. Find and Verify Ownership
+            $property = DB::table("properties")->where('id', $id)->where('owner_id', $ownerId)->first();
+            if (!$property) {
+                return response()->json(['message' => 'Unauthorized or Not Found'], 403);
+            }
+            
+            // 2. Handle Thumbnail Update
+            $thumbnailPath = $property->thumbnail; // Keep old by default
+            if ($request->hasFile('thumbnail')) {
+                if ($property->thumbnail) {
+                    Storage::disk('public')->delete($property->thumbnail);
+                }
+                $thumbnailPath = $request->file('thumbnail')->store('thumbnails', 'public');
+            }
+
+            // 3. Handle Gallery Images (Only if new ones provided)
+            if ($request->hasFile('images')) {
+                $oldImages = DB::table("property_images")->where("property_id", $id)->get();
+                foreach ($oldImages as $oldImg) {
+                    Storage::disk('public')->delete($oldImg->img_path);
+                }
+                DB::table("property_images")->where("property_id", $id)->delete();
+
+                foreach ($request->file('images') as $image) {
+                    DB::table("property_images")->insert([
+                        'property_id' => $id,
+                        'img_path' => $image->store('property_images', 'public'),
+                        'created_at' => now()
+                    ]);
+                }
+            }
+
+            // 4. Update Bridge Tables (Delete & Replace)
+            $syncTables = [
+                'property_amenities' => ['col' => 'amenity_id', 'data' => $request->property_amenities],
+                'custom_amenities'   => ['col' => 'custom_amenity', 'data' => $request->custom_amenities],
+                'utilities'          => ['col' => 'utility_name', 'data' => $request->utilities],
+                'custom_utilities'   => ['col' => 'custom_utility', 'data' => $request->custom_utilities],
+                'property_facilities' => ['col' => 'facility_id', 'data' => $request->property_facilities],
+                'custom_facilities'  => ['col' => 'custom_facility', 'data' => $request->custom_facilities],
+            ];
+
+            foreach ($syncTables as $table => $config) {
+                DB::table($table)->where("property_id", $id)->delete();
+                if (!empty($config['data'])) {
+                    foreach ($config['data'] as $value) {
+                        DB::table($table)->insert(['property_id' => $id, $config['col'] => $value]);
+                    }
+                }
+            }
+
+            $data = [
+                // From Step 1
+                'title' => $request->title ?? $property->title,
+                'description' => $request->description ?? $property->description,
+                'thumbnail' => $thumbnailPath,
+
+                // From Step 2
+                'agreement_type' => $request->agreement_type  ?? $property->agreement_type,
+                'property_type_id' => $request->property_type_id  ?? $property->property_type_id,
+                "furnishing" => $request->furnishing  ?? $property->furnishing,
+                // For Commercial Space
+                "floor_area" => $request->floor_area  ?? $property->floor_area,
+                "lot_area" => $request->lot_area  ?? $property->lot_area,
+                "max_size" => $request->max_size  ?? $property->max_size,
+                // For Types Excluding Commercial Space
+                "bedrooms" => $request->bedrooms  ?? $property->bedrooms,
+                "single_bed" => $request->single_bed  ?? $property->single_bed,
+                "double_bed" => $request->double_bed  ?? $property->double_bed,
+                
+                "public_bath" => $request->public_bath  ?? $property->public_bath,
+                "private_bath" => $request->private_bath  ?? $property->private_bath,
+                
+                "bed_space" => $request->bed_space  ?? $property->bed_space,
+                // Others
+                "rules" => $request->rules  ?? $property->rules,
+                "curfew_from" => $request->curfew_from  ?? $property->curfew_from,
+                "curfew_to" => $request->curfew_to  ?? $property->curfew_to,
+
+                // Step 3
+                'payment_frequency' => $request->payment_frequency ?? $property->payment_frequency,
+                'price' => $request->price ?? $property->price,
+                'advance_payment_months' => $request->advance_payment_months ?? $property->advance_payment_months,
+                'deposit_required' => $request->deposit_required ?? $property->deposit_required,
+                
+                // Step 4
+                'latitude' => $request->latitude ?? $property->latitude,
+                'longitude' => $request->longitude ?? $property->longitude,
+                'region_name' => $request->region_name ?? $property->region_name,
+                'state_name' => $request->state_name ?? $property->state_name,
+                'town_name' => $request->town_name ?? $property->town_name,
+                'village_name' => $request->village_name ?? $property->village_name,
+                'status' => "pending",
+                'updated_at' => now(),
+            ];
+
+            // 5. Update the Main Property Table
+            DB::table("properties")->where('id', $id)->update($data);
+
+            DB::commit();
+            return response()->json(['message' => 'Property updated successfully']);
+
+        } catch (\Throwable $th) {
+            DB::rollBack();
+            return response()->json(['error' => $th->getMessage(), 'trace' => $th->getTraceAsString()], 500);
+        }
+    }
+
+    
 
 
 

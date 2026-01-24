@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('subscriptions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
-            $table->foreignId('owner_id')->constrained('owners')->onDelete('cascade')->nullable();
+            $table->foreignId('owner_id')->nullable()->constrained('owners')->onDelete('cascade');
             
             // Plan details
             $table->string('plan_name'); // e.g. "Monthly", "Annual", "Pro Plan"

@@ -25,8 +25,6 @@ class Amenities extends Seeder
             ['amenity_name' => 'Air Conditioner'],
             ['amenity_name' => 'Water Heater'],
             ['amenity_name' => 'Wi-fi'],
-            ['amenity_name' => 'Air Condition'],
-
         ]);
     }
 }

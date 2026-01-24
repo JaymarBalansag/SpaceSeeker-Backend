@@ -23,7 +23,8 @@ class AuthController extends Controller
 
         if(!$user || !Hash::check($validated["password"], $user->password)){
              return response()->json([
-                 "message" => "The provided credentials are incorrect" 
+                 "message" => "The provided credentials are incorrect",
+                 "error_type" => "Credential",
              ], 401);
         }
 
@@ -81,51 +82,25 @@ class AuthController extends Controller
 
     public function register(RegisterRequest $request)
     {
-        // Validate input
-        $validated = $request->validated();
-        // Create user
-        $user = User::create([
-            'first_name' => $validated['first_name'],
-            'last_name' => $validated['last_name'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-        ]);
+        try {
+            // Validate input
+            $validated = $request->validated();
+            // Create user
+            $user = User::create([
+                'first_name' => $validated['first_name'],
+                'last_name' => $validated['last_name'],
+                'email' => $validated['email'],
+                'password' => Hash::make($validated['password']),
+            ]);
 
-        // Create token (Sanctum)
-        if($user){
-            // Short-lived access token (15 mins)
-            // $accessToken = $user->createToken('access-token', ['*'], Carbon::now()->addMinutes(15))->plainTextToken;
-
-            // Long-lived refresh token (7 days)
-            // $refreshToken = $user->createToken('refresh-token', ['*'], Carbon::now()->addDays(2))->plainTextToken;
-
-            // $cookie = Cookie::make(
-            //     'refresh_token',
-            //     $refreshToken,
-            //     60 * 24 * 2, 
-            //     "/",
-            //     null,
-            //     false, // secure
-            //     true, // httpOnly
-            //     false,
-            //     'Lax'
-            // );
-
-            $createdUser = DB::table('users')->where('email', $validated["email"])->first();
+            $user->sendEmailVerificationNotification();
 
             return response()->json([
-                // 'access_token' => $accessToken,
-                // 'token_type' => 'Bearer',
-                // 'expires_in' => 900,  15 mins
-                'user' => $createdUser,
                 'message' => 'User registered successfully'
             ], 200);
-            // ->cookie($cookie);
-        }
-        else {
-            return response()->json([
-                 "message" => "Something went wrong! while registration"
-            ], 500);
+            
+        } catch (\Throwable $th) {
+            return response()->json(["message" => "Something went wrong! while registration" . $th->getMessage()], 500);
         }
     }
 

@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
+use function PHPUnit\Framework\isEmpty;
+
 class RecommendedController extends Controller
 {
 
@@ -58,8 +60,13 @@ class RecommendedController extends Controller
                 ->limit(6)
                 ->get();
 
+            if ($properties->isEmpty()) {
+                $properties = $this->getProperty();
+            }
+
             return response()->json([
                 'status' => 'success',
+                'user' => $user,
                 'data' => $properties,
                 'message' => 'Recommended properties retrieved successfully.'
             ], 200);
@@ -138,7 +145,7 @@ class RecommendedController extends Controller
                 return response()->json([
                     'status' => 'success',
                     'data' => [],
-                    'message' => 'No recommended properties found based on preferred property types.'
+                    'message' => 'No preference set'
                 ], 200);
             } 
 
@@ -157,74 +164,64 @@ class RecommendedController extends Controller
         }
     }
 
-    public function byNearYou(){
+    public function byNearYou() {
         try {
             $user = DB::table('users')->where('id', Auth::id())->first();
-
+            if (!$user || !$user->latitude || !$user->longitude) {
+                return response()->json(['error' => 'User location not found', 'data' => []], 200);
+            }
 
             $lat = (float) $user->latitude;
             $lng = (float) $user->longitude;
             $radius = 10; // km
 
-            
+            // Optimization: Bounding Box (1 degree is approx 111km)
+            // This allows the database to use indexes on lat/lng columns
+            $latLimit = $radius / 111.045;
+            $lngLimit = $radius / (111.045 * cos(deg2rad($lat)));
 
-            $properties = DB::table('properties')
-                ->select(
-                    'properties.*',
-                    DB::raw("
-                        (
-                            6371 * acos(
-                                cos(radians($lat)) *
-                                cos(radians(properties.latitude)) *
-                                cos(radians(properties.longitude) - radians($lng)) +
-                                sin(radians($lat)) *
-                                sin(radians(properties.latitude))
-                            )
-                        ) AS distance
-                    "),
-                    DB::raw("
-                        CASE 
-                            WHEN properties.thumbnail IS NOT NULL 
-                            THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
-                            ELSE NULL 
-                        END AS image_url
-                    ")
-                )
-                ->where('properties.town_name', $user->town_name)
-                ->where("properties.status", "=", "active")
+            $query = DB::table('properties')
+                ->select('properties.*')
+                ->addSelect(DB::raw("
+                    (6371 * acos(
+                        cos(radians($lat)) * cos(radians(latitude)) * cos(radians(longitude) - radians($lng)) + 
+                        sin(radians($lat)) * sin(radians(latitude))
+                    )) AS distance
+                "))
+                // Add full URL for thumbnail
+                ->addSelect(DB::raw("CASE WHEN thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', thumbnail) ELSE NULL END as image_url"))
+                ->where('status', 'active')
+                // Bounding box filter (fast indexed search)
+                ->whereBetween('latitude', [$lat - $latLimit, $lat + $latLimit])
+                ->whereBetween('longitude', [$lng - $lngLimit, $lng + $lngLimit]);
+
+            // Get properties within exact radius
+            $properties = (clone $query)
                 ->having('distance', '<=', $radius)
                 ->orderBy('distance')
                 ->limit(6)
                 ->get();
 
-            if ($properties->isEmpty()) {
-                $properties = DB::table('properties')
-                    ->select('properties.*',
-                        DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-                    )
-                    ->where('properties.town_name', $user->town_name)
-                    ->where("properties.status", "=", "active")
-                    ->inRandomOrder()
-                    ->limit(6)
-                    ->get();
-            }
-
-            if ($properties->isEmpty()) {
-                return response()->json([
-                    'status' => 'success',
-                    'data' => [],
-                    'message' => 'No nearby properties found.'
-                ], 200);
-            }
+            // Fallback: If nothing nearby, show properties in the same town
+            // if ($properties->isEmpty()) {
+            //     $properties = DB::table('properties')
+            //         ->select('properties.*')
+            //         ->addSelect(DB::raw("CASE WHEN thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', thumbnail) ELSE NULL END as image_url"))
+            //         ->where('town_name', $user->town_name)
+            //         ->where('status', 'active')
+            //         ->inRandomOrder()
+            //         ->limit(6)
+            //         ->get();
+            // }
 
             return response()->json([
                 'status' => 'success',
                 'data' => $properties,
-                'message' => 'Nearby properties retrieved successfully.'
+                'message' => $properties->isEmpty() ? 'No properties found.' : 'Properties retrieved.'
             ], 200);
 
         } catch (\Throwable $th) {
-            return response()->json(['error' => 'Failed to fetch nearby properties'], 500);
+            return response()->json(['error' => 'Search failed: ' . $th->getMessage()], 500);
         }
     }
 
@@ -295,10 +292,7 @@ class RecommendedController extends Controller
             ]);
 
         } catch (\Throwable $th) {
-            // return response()->json([
-            //     'status' => 'error',
-            //     'message' => 'Failed to fetch popular property types.'
-            // ], 500);
+
             return response()->json([
                 'error' => $th->getMessage(),
                 'file' => $th->getFile(),

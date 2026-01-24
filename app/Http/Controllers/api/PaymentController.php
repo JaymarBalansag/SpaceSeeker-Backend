@@ -32,12 +32,12 @@ class PaymentController extends Controller
 
         // 3. Determine plan details (NEVER trust frontend)
         if ($request->plan === 'Monthly') {
-            $amount = 500;
+            $amount = 200;
             $billing = 'monthly';
             $listingLimit = 2;
             $endDate = Carbon::now()->addMonth();
         } else {
-            $amount = 5000;
+            $amount = 2000;
             $billing = 'annual';
             $listingLimit = 5;
             $endDate = Carbon::now()->addYear();

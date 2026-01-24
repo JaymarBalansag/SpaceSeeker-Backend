@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Middleware\IsAdmin;
+use App\Http\Middleware\isOwner;
+use App\Http\Middleware\isPublicRoute;
+use App\Http\Middleware\isTenant;
 use Illuminate\Foundation\Application;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -19,6 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
         
         $middleware->alias([
             'is_admin' => IsAdmin::class,
+            'is_owner' => isOwner::class,
+            'is_tenant' => isTenant::class,
+            'is_public' => isPublicRoute::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

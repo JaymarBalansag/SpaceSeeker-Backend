@@ -11,8 +11,9 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use App\Http\Requests\ChangePasswordRequest;
 use App\Http\Requests\ProfileCompletionRequest;
-use App\Http\Requests\PasswordVerificationRequest;
 use App\Http\Requests\updateUserProfileRequest;
+use App\Http\Requests\UpdateUserLocationRequest;
+use App\Http\Requests\PasswordVerificationRequest;
 
 class UserController extends Controller
 {
@@ -133,6 +134,34 @@ class UserController extends Controller
                 'message' => 'Error updating profile',
                 'error'   => $e->getMessage()
             ], 500);
+        }
+    }
+
+    public function updateLocation(UpdateUserLocationRequest $request){
+        try {
+            $validated = $request->validated();
+            $user = Auth::user();
+
+            $updateData = [
+                "streets" => $validated["streets"],
+                "region_name" => $validated["region_name"],
+                "state_name" => $validated["state_name"],
+                "town_name" => $validated["town_name"],
+                "village_name" => $validated["village_name"],
+                "latitude" => $validated["latitude"],
+                "longitude" => $validated["longitude"],
+            ];
+
+            DB::table('users')
+                ->where('id', $user->id)
+                ->update($updateData);
+
+            return response()->json([
+                "message" => "Location Update Successfully"
+            ]);
+
+        } catch (\Throwable $th) {
+            throw $th;
         }
     }
 

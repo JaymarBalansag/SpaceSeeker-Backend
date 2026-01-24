@@ -73,7 +73,13 @@ return new class extends Migration
             $table->integer("bedrooms")->nullable();   // For house/apt/condo
             $table->integer("bathrooms")->nullable();  // All except maybe bare rooms
             $table->integer("bed_space")->nullable();  // Specifically for boarding houses
-            
+            $table->integer("single_bed")->nullable()->default(0);
+            $table->integer("double_bed")->nullable()->default(0);
+            $table->integer("public_bath")->nullable()->default(0);
+            $table->integer("private_bath")->nullable()->default(0);
+
+            $table->time("curfew_from")->nullable();
+            $table->time("curfew_to")->nullable();
             $table->decimal("floor_area", 8, 2)->nullable(); // sqm, apt/condo/house/commercial
             $table->decimal("lot_area", 8, 2)->nullable();   // sqm, house/land/commercial
 
@@ -96,6 +102,7 @@ return new class extends Migration
             // =======================
             $table->text("rules")->nullable(); // e.g., "No pets, no smoking"
             $table->string('status')->default('pending');
+            $table->integer('views')->default(0);
             $table->timestamps();
         });
     }
