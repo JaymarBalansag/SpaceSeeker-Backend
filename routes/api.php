@@ -42,7 +42,7 @@ Route::get('/email/verify/{id}/{hash}', function (Request $request, $id, $hash) 
         $user->markEmailAsVerified();
     }
 
-    return redirect(config('app.frontend_url') . '/login');
+    return redirect(config('app.frontend_url') . '/Rentahub');
 
 })->name('verification.verify');
 
