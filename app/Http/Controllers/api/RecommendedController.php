@@ -11,13 +11,36 @@ use function PHPUnit\Framework\isEmpty;
 
 class RecommendedController extends Controller
 {
+    private function reviewSummarySubquery()
+    {
+        return DB::table('property_reviews')
+            ->select(
+                'property_id',
+                DB::raw('ROUND(AVG(rating), 1) as average_rating'),
+                DB::raw('COUNT(*) as total_reviews')
+            )
+            ->groupBy('property_id');
+    }
+
+    private function basePropertiesQuery()
+    {
+        $reviewSummary = $this->reviewSummarySubquery();
+
+        return DB::table('properties')
+            ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
+                $join->on('review_summary.property_id', '=', 'properties.id');
+            })
+            ->select(
+                'properties.*',
+                DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url"),
+                DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
+                DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews')
+            );
+    }
 
     private function getProperty(){
         try {
-            $properties = DB::table('properties')
-                ->select('properties.*',
-                DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-                )
+            $properties = $this->basePropertiesQuery()
                 ->where("status", "=", "active")
                 ->inRandomOrder()
                 ->limit(6)
@@ -50,10 +73,7 @@ class RecommendedController extends Controller
                 ], 200);
             }
 
-            $properties = DB::table('properties')
-                ->select('properties.*',
-                DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-                )
+            $properties = $this->basePropertiesQuery()
                 ->where("properties.town_name", $user->town_name)
                 ->where("status", "=", "active")
                 ->inRandomOrder()
@@ -87,13 +107,10 @@ class RecommendedController extends Controller
                 ->where('user_id', $user->id)
                 ->pluck('amenity_id');
 
-            $properties = DB::table('properties')
+            $properties = $this->basePropertiesQuery()
                 ->join('property_amenities', 'property_amenities.property_id', '=', 'properties.id')
                 ->whereIn('property_amenities.amenity_id', $preferredAmenityIds)
                 ->where("properties.status", "=", "active")
-                ->select('properties.*', 
-                DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-                )
                 ->distinct()
                 ->inRandomOrder()
                 ->limit(6)
@@ -130,12 +147,9 @@ class RecommendedController extends Controller
                 ->where('user_id', $user->id)
                 ->pluck('property_type_id');
 
-            $properties = DB::table('properties')
+            $properties = $this->basePropertiesQuery()
                 ->whereIn('properties.property_type_id', $preferredTypeIds)
                 ->where("properties.status", "=", "active")
-                ->select('properties.*',
-                DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-                )
                 ->distinct()
                 ->inRandomOrder()
                 ->limit(6)
@@ -180,16 +194,13 @@ class RecommendedController extends Controller
             $latLimit = $radius / 111.045;
             $lngLimit = $radius / (111.045 * cos(deg2rad($lat)));
 
-            $query = DB::table('properties')
-                ->select('properties.*')
+            $query = $this->basePropertiesQuery()
                 ->addSelect(DB::raw("
                     (6371 * acos(
                         cos(radians($lat)) * cos(radians(latitude)) * cos(radians(longitude) - radians($lng)) + 
                         sin(radians($lat)) * sin(radians(latitude))
                     )) AS distance
                 "))
-                // Add full URL for thumbnail
-                ->addSelect(DB::raw("CASE WHEN thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', thumbnail) ELSE NULL END as image_url"))
                 ->where('status', 'active')
                 // Bounding box filter (fast indexed search)
                 ->whereBetween('latitude', [$lat - $latLimit, $lat + $latLimit])
@@ -306,11 +317,7 @@ class RecommendedController extends Controller
             $limit = (int) $request->query('limit', 2);
             $limit = max(1, min($limit, 20));
 
-            $properties = DB::table('properties')
-                ->select(
-                    'properties.*',
-                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
-                )
+            $properties = $this->basePropertiesQuery()
                 ->where('properties.status', 'active')
                 ->orderByDesc('properties.views')
                 ->orderByDesc('properties.created_at')
