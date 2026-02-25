@@ -38,6 +38,163 @@ class PropertyController extends Controller
         $this->notificationLogicObserver = $notificationLogicObserver;
     }
 
+    private function cleanFeatureValue($value): ?string
+    {
+        $text = trim((string) $value);
+        return $text === '' ? null : $text;
+    }
+
+    private function uniqueFeatures(array $items): array
+    {
+        $seen = [];
+        $result = [];
+
+        foreach ($items as $item) {
+            $clean = $this->cleanFeatureValue($item);
+            if ($clean === null) {
+                continue;
+            }
+
+            $key = strtolower($clean);
+            if (!isset($seen[$key])) {
+                $seen[$key] = true;
+                $result[] = $clean;
+            }
+        }
+
+        return $result;
+    }
+
+    private function parseIdList($value): array
+    {
+        if (is_array($value)) {
+            return array_values(array_filter(array_map('intval', $value), fn ($v) => $v > 0));
+        }
+
+        if ($value === null || $value === '') {
+            return [];
+        }
+
+        return array_values(array_filter(array_map('intval', explode(',', (string) $value)), fn ($v) => $v > 0));
+    }
+
+    private function attachPropertyFeatureChips($properties, array $selectedAmenityIds = [], array $selectedFacilityIds = []): void
+    {
+        $propertyIds = collect($properties)->pluck('id')->filter()->values()->all();
+        if (empty($propertyIds)) {
+            return;
+        }
+
+        $systemAmenities = DB::table('property_amenities')
+            ->join('amenities', 'amenities.id', '=', 'property_amenities.amenity_id')
+            ->whereIn('property_amenities.property_id', $propertyIds)
+            ->select('property_amenities.property_id', 'amenities.amenity_name as feature_name')
+            ->get()
+            ->groupBy('property_id');
+
+        $customAmenities = DB::table('custom_amenities')
+            ->whereIn('property_id', $propertyIds)
+            ->select('property_id', 'custom_amenity as feature_name')
+            ->get()
+            ->groupBy('property_id');
+
+        $systemFacilities = DB::table('property_facilities')
+            ->join('facilities', 'facilities.id', '=', 'property_facilities.facility_id')
+            ->whereIn('property_facilities.property_id', $propertyIds)
+            ->select('property_facilities.property_id', 'facilities.facility_name as feature_name')
+            ->get()
+            ->groupBy('property_id');
+
+        $customFacilities = DB::table('custom_facilities')
+            ->whereIn('property_id', $propertyIds)
+            ->select('property_id', 'custom_facility as feature_name')
+            ->get()
+            ->groupBy('property_id');
+
+        $selectedAmenityNames = empty($selectedAmenityIds)
+            ? []
+            : DB::table('amenities')
+                ->whereIn('id', $selectedAmenityIds)
+                ->pluck('amenity_name')
+                ->map(fn ($name) => $this->cleanFeatureValue($name))
+                ->filter()
+                ->values()
+                ->all();
+
+        $selectedFacilityNames = empty($selectedFacilityIds)
+            ? []
+            : DB::table('facilities')
+                ->whereIn('id', $selectedFacilityIds)
+                ->pluck('facility_name')
+                ->map(fn ($name) => $this->cleanFeatureValue($name))
+                ->filter()
+                ->values()
+                ->all();
+
+        $hasFilterContext = !empty($selectedAmenityNames) || !empty($selectedFacilityNames);
+
+        foreach ($properties as $property) {
+            $propertyId = $property->id;
+
+            $amenityValues = $this->uniqueFeatures(array_merge(
+                collect($systemAmenities->get($propertyId, []))->pluck('feature_name')->all(),
+                collect($customAmenities->get($propertyId, []))->pluck('feature_name')->all()
+            ));
+
+            $facilityValues = $this->uniqueFeatures(array_merge(
+                collect($systemFacilities->get($propertyId, []))->pluck('feature_name')->all(),
+                collect($customFacilities->get($propertyId, []))->pluck('feature_name')->all()
+            ));
+
+            $defaultChips = array_slice($amenityValues, 0, 3);
+            $defaultCount = count($amenityValues);
+
+            if (!$hasFilterContext) {
+                $property->display_chips = $defaultChips;
+                $property->display_chips_more_count = max($defaultCount - count($defaultChips), 0);
+                continue;
+            }
+
+            $amenityLookup = [];
+            foreach ($amenityValues as $name) {
+                $amenityLookup[strtolower($name)] = $name;
+            }
+
+            $facilityLookup = [];
+            foreach ($facilityValues as $name) {
+                $facilityLookup[strtolower($name)] = $name;
+            }
+
+            $matched = [];
+            foreach ($selectedAmenityNames as $name) {
+                $key = strtolower($name);
+                if (isset($amenityLookup[$key])) {
+                    $matched[] = $amenityLookup[$key];
+                }
+            }
+
+            foreach ($selectedFacilityNames as $name) {
+                $key = strtolower($name);
+                if (isset($facilityLookup[$key])) {
+                    $matched[] = $facilityLookup[$key];
+                }
+            }
+
+            $matched = $this->uniqueFeatures($matched);
+
+            if (!empty($matched)) {
+                $chips = array_slice($matched, 0, 3);
+                $property->display_chips = $chips;
+                $property->display_chips_more_count = max(count($matched) - count($chips), 0);
+            } else {
+                // Fallback to default amenities when none of the selected filters match this card.
+                $property->display_chips = $defaultChips;
+                $property->display_chips_more_count = max($defaultCount - count($defaultChips), 0);
+            }
+
+        }
+    }
+
     public function isSubscribing(isSubscribingRequest $request){
         $validated = $request->validated();
 
@@ -232,6 +389,8 @@ class PropertyController extends Controller
                 )
                 ->where("properties.status", "active")
                 ->paginate(4); // ✅ pagination here
+
+            $this->attachPropertyFeatureChips($properties->getCollection());
 
 
             // ❗ paginate() never returns empty collection directly
@@ -788,6 +947,9 @@ class PropertyController extends Controller
 
     public function getFilteredProperty(Request $request){
         try {
+            $selectedAmenityIds = $this->parseIdList($request->input('amenities'));
+            $selectedFacilityIds = $this->parseIdList($request->input('facilities'));
+
             $reviewSummary = DB::table('property_reviews')
                 ->select(
                     'property_id',
@@ -812,26 +974,22 @@ class PropertyController extends Controller
                 ->where("properties.status", "=", "active");
 
             // 1. Filter by Amenities (using subquery to avoid row duplication)
-            if ($request->filled('amenities')) {
-                $amenities = is_array($request->amenities) ? $request->amenities : explode(',', $request->amenities);
-                
-                $query->whereExists(function ($q) use ($amenities) {
+            if (!empty($selectedAmenityIds)) {
+                $query->whereExists(function ($q) use ($selectedAmenityIds) {
                     $q->select(DB::raw(1))
                     ->from('property_amenities')
                     ->whereRaw('property_amenities.property_id = properties.id')
-                    ->whereIn('property_amenities.amenity_id', $amenities);
+                    ->whereIn('property_amenities.amenity_id', $selectedAmenityIds);
                 });
             }
 
             // 2. Filter by Facilities
-            if ($request->filled('facilities')) {
-                $facilities = is_array($request->facilities) ? $request->facilities : explode(',', $request->facilities);
-                
-                $query->whereExists(function ($q) use ($facilities) {
+            if (!empty($selectedFacilityIds)) {
+                $query->whereExists(function ($q) use ($selectedFacilityIds) {
                     $q->select(DB::raw(1))
                     ->from('property_facilities')
                     ->whereRaw('property_facilities.property_id = properties.id')
-                    ->whereIn('property_facilities.facility_id', $facilities);
+                    ->whereIn('property_facilities.facility_id', $selectedFacilityIds);
                 });
             }
 
@@ -857,6 +1015,11 @@ class PropertyController extends Controller
 
             // Final Paginate
             $properties = $query->paginate(4);
+            $this->attachPropertyFeatureChips(
+                $properties->getCollection(),
+                $selectedAmenityIds,
+                $selectedFacilityIds
+            );
 
             return response()->json([
                 'message' => 'Filtered properties fetched successfully',
@@ -971,6 +1134,7 @@ class PropertyController extends Controller
             // return response()->json([ 'sql' => $query->toSql(), 'bindings' => $query->getBindings(), ]);
 
             $properties = $query->paginate(6, ['*'], 'page', $page);
+            $this->attachPropertyFeatureChips($properties->getCollection());
 
             return response()->json([
                 'message' => 'Properties fetched',
