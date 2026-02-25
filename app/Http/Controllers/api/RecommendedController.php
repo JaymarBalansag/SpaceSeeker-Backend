@@ -301,4 +301,36 @@ class RecommendedController extends Controller
         }
     }
 
+    public function byTrending(Request $request) {
+        try {
+            $limit = (int) $request->query('limit', 2);
+            $limit = max(1, min($limit, 20));
+
+            $properties = DB::table('properties')
+                ->select(
+                    'properties.*',
+                    DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
+                )
+                ->where('properties.status', 'active')
+                ->orderByDesc('properties.views')
+                ->orderByDesc('properties.created_at')
+                ->limit($limit)
+                ->get();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $properties,
+                'message' => $properties->isEmpty()
+                    ? 'No trending properties found.'
+                    : 'Trending properties retrieved successfully.'
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'An error occurred while fetching trending properties: ' . $th->getMessage()
+            ], 500);
+        }
+    }
+
 }

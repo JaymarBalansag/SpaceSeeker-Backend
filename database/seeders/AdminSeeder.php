@@ -28,5 +28,19 @@ class AdminSeeder extends Seeder
                 'updated_at' => now(),
             ]
         );
+
+        DB::table('users')->updateOrInsert(
+            ['email' => 'luffy@gmail.com'], // prevent duplicates
+            [
+                'first_name' => 'Luffy',
+                'last_name'  => 'Monkey',
+                'email'      => 'luffy@gmail.com',
+                'password'   => Hash::make('123123123'),
+                'role'       => 'user',
+                'email_verified_at' => Carbon::now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]
+        );
     }
 }

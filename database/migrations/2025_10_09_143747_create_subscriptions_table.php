@@ -33,6 +33,7 @@ return new class extends Migration
             
             // Other optional fields
             $table->integer('listing_limit')->default(5); // how many properties allowed
+            $table->string('payment_intent_id')->nullable();
             $table->timestamps();
         });
     }

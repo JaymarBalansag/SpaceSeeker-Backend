@@ -7,7 +7,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Requests\AuthRequest;
-use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
 use App\Http\Requests\RegisterRequest;
@@ -28,32 +27,14 @@ class AuthController extends Controller
              ], 401);
         }
 
-        // Short-lived access token (15 mins)
-        $accessToken = $user->createToken('access-token', ['*'], Carbon::now()->addMinutes(15))->plainTextToken;
-
-        // Long-lived refresh token (7 days)
-        $refreshToken = $user->createToken('refresh-token', ['*'], Carbon::now()->addDays(2))->plainTextToken;
-
-        $cookie = Cookie::make(
-            'refresh_token',
-            $refreshToken,
-            60 * 24 * 2, 
-            "/",
-            null,
-            false, // secure
-            true, // httpOnly
-            false,
-            'Lax'
-        );
-
-        
+        $tokens = $this->issueTokens($user);
 
         return response()->json([
-            'access_token' => $accessToken,
+            'access_token' => $tokens['access_token'],
             'token_type' => 'Bearer',
             'expires_in' => 900, // 15 mins
             'user' => $user
-        ])->cookie($cookie);
+        ])->cookie($tokens['cookie']);
     }
 
     public function refresh(Request $request)
@@ -85,6 +66,7 @@ class AuthController extends Controller
         try {
             // Validate input
             $validated = $request->validated();
+            
             // Create user
             $user = User::create([
                 'first_name' => $validated['first_name'],
@@ -95,8 +77,11 @@ class AuthController extends Controller
 
             $user->sendEmailVerificationNotification();
 
+            $userId = $user->id;
+
             return response()->json([
-                'message' => 'User registered successfully'
+                'message' => 'User registered successfully',
+                "userID" => $userId
             ], 200);
             
         } catch (\Throwable $th) {
@@ -113,5 +98,29 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'Logged out'])
             ->cookie(Cookie::forget('refresh_token'));
+    }
+
+    private function issueTokens(User $user): array
+    {
+        $accessToken = $user->createToken('access-token', ['*'], Carbon::now()->addMinutes(15))->plainTextToken;
+        $refreshToken = $user->createToken('refresh-token', ['*'], Carbon::now()->addDays(2))->plainTextToken;
+
+        $cookie = Cookie::make(
+            'refresh_token',
+            $refreshToken,
+            60 * 24 * 2,
+            '/',
+            null,
+            false,
+            true,
+            false,
+            'Lax'
+        );
+
+        return [
+            'access_token' => $accessToken,
+            'refresh_token' => $refreshToken,
+            'cookie' => $cookie,
+        ];
     }
 }

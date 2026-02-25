@@ -2,38 +2,37 @@
 
 namespace App\Http\Controllers\Api;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\BookingRequest;
-use App\Http\Requests\TenantsRequest;
+use App\Observers\Notifications\Logic\NotificationLogicObserver;
+use App\Services\NotificationService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-
-use function Laravel\Prompts\select;
+use Illuminate\Support\Facades\DB;
 
 class BookingController extends Controller
 {
+    public function __construct(
+        protected NotificationService $notificationService,
+        protected NotificationLogicObserver $notificationLogicObserver
+    ) {
+    }
+
     public function submitBookingRequest(Request $request)
     {
         try {
-            // Using $request->all() or specific validation logic
             $propertyId = $request->property_id;
             $userId = Auth::id();
 
-            // 1. Normalize stay_months if custom
             $stayDuration = $request->stay_months;
             if ($stayDuration === "custom") {
                 $stayDuration = $request->custom_months;
             }
 
-            // 2. Owners cannot book properties
             $isOwner = DB::table("owners")->where("user_id", $userId)->exists();
             if ($isOwner) {
                 return response()->json(["error" => "Owners cannot book properties."], 403);
             }
 
-            // 3. Check for existing "active" engagement
-            // This prevents users from booking if they are already waiting or already live there
             $hasPendingOrApproved = DB::table('bookings')
                 ->where('user_id', $userId)
                 ->whereIn('status', ['pending', 'approved'])
@@ -48,7 +47,6 @@ class BookingController extends Controller
                 return response()->json(["error" => "You already have a pending application or an active tenancy."], 403);
             }
 
-            // 4. Check Property Existence and Type
             $property = DB::table('properties')
                 ->join("property_types", "properties.property_type_id", "=", "property_types.id")
                 ->select("properties.*", "property_types.type_name")
@@ -59,20 +57,17 @@ class BookingController extends Controller
                 return response()->json(["error" => "Property Not Found"], 404);
             }
 
-            // 5. Validation Logic based on Property Type
             if (empty($request->agreement)) {
                 return response()->json(["error" => "Agreement checkbox must be accepted"], 422);
             }
 
-            // Validation for Boarding Houses
             if ($property->type_name === "Boarding House") {
                 if (empty($stayDuration) || intval($stayDuration) <= 0) {
                     return response()->json(["error" => "Invalid stay duration"], 422);
                 }
             }
 
-            // Validation for Apartments/Condos/Houses
-            if (in_array($property->type_name, ["Apartment", "Condo", "House", "Commercial Space"])) {
+            if (in_array($property->type_name, ["Apartment", "Condo", "House", "Commercial Space"], true)) {
                 if (empty($request->lease_duration) || intval($request->lease_duration) <= 0) {
                     return response()->json(["error" => "Invalid lease duration"], 422);
                 }
@@ -82,29 +77,45 @@ class BookingController extends Controller
                 }
             }
 
-            // Date validation
             if (empty($request->move_in_date) || strtotime($request->move_in_date) < strtotime(date('Y-m-d'))) {
                 return response()->json(["error" => "Move-in date cannot be in the past"], 422);
             }
 
-            // 6. Final Step: Insert the Booking
-            DB::table('bookings')->insert([
-                'user_id'         => $userId,
-                'property_id'     => $propertyId,
-                'status'          => 'pending',
-                'stay_duration'   => $stayDuration,
-                'occupants_num'   => $request->occupant_num,
-                'move_in_date'    => $request->move_in_date,
-                'lease_duration'  => $request->lease_duration,
+            $bookingId = DB::table('bookings')->insertGetId([
+                'user_id' => $userId,
+                'property_id' => $propertyId,
+                'status' => 'pending',
+                'stay_duration' => $stayDuration,
+                'occupants_num' => $request->occupant_num,
+                'move_in_date' => $request->move_in_date,
+                'lease_duration' => $request->lease_duration,
                 'room_preference' => $request->room_preference,
-                'notes'           => $request->notes,
-                'agreement'       => $request->agreement,
-                'created_at'      => now(),
-                'updated_at'      => now(),
+                'notes' => $request->notes,
+                'agreement' => $request->agreement,
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
 
-            return response()->json(["message" => "Booking Request Submitted Successfully"], 201);
+            $ownerUserId = DB::table('owners')
+                ->where('id', $property->owner_id)
+                ->value('user_id');
 
+            if ($ownerUserId) {
+                $requesterName = trim((string) DB::table('users')
+                    ->where('id', $userId)
+                    ->selectRaw("CONCAT(first_name, ' ', last_name) as full_name")
+                    ->value('full_name'));
+
+                $payload = $this->notificationLogicObserver->buildBookingPendingPayload(
+                    (string) $property->title,
+                    $requesterName !== '' ? $requesterName : 'A user',
+                    (int) $bookingId
+                );
+
+                $this->notificationService->createForUser((int) $ownerUserId, $payload);
+            }
+
+            return response()->json(["message" => "Booking Request Submitted Successfully"], 201);
         } catch (\Exception $e) {
             return response()->json([
                 "error" => "Server Booking Error",
@@ -113,34 +124,37 @@ class BookingController extends Controller
         }
     }
 
-    public function getPendingUserBookings() {
+    public function getPendingUserBookings()
+    {
         try {
-            //code...
-
             $owner = DB::table("owners")
-            ->where("user_id", Auth::id())
-            ->first();
+                ->where("user_id", Auth::id())
+                ->first();
 
-
+            if (!$owner) {
+                return response()->json([
+                    "message" => "Owner profile not found",
+                    "data" => []
+                ], 404);
+            }
 
             $bookings = DB::table("bookings")
-            ->join("properties", "bookings.property_id", "=", "properties.id")
-            ->join("property_types", "properties.property_type_id", "=", "property_types.id")
-            ->join("users", "bookings.user_id", "=", "users.id")
-            ->select(
-                "bookings.*",
-                "users.first_name",
-                "users.last_name",
-                "properties.id as property_id",
-                "properties.title",
-                "property_types.type_name"
+                ->join("properties", "bookings.property_id", "=", "properties.id")
+                ->join("property_types", "properties.property_type_id", "=", "property_types.id")
+                ->join("users", "bookings.user_id", "=", "users.id")
+                ->select(
+                    "bookings.*",
+                    "users.first_name",
+                    "users.last_name",
+                    "properties.id as property_id",
+                    "properties.title",
+                    "property_types.type_name"
+                )
+                ->where("bookings.status", "pending")
+                ->where("properties.owner_id", $owner->id)
+                ->get();
 
-            )
-            ->where("bookings.status", "pending")
-            ->where("properties.owner_id", $owner->id)
-            ->get();
-
-            if($bookings->isEmpty()){
+            if ($bookings->isEmpty()) {
                 return response()->json([
                     "message" => "No Bookings Found",
                     "data" => $bookings
@@ -148,134 +162,125 @@ class BookingController extends Controller
             }
 
             return response()->json([
-                "message" => "Bookings Retrived Successfully",
+                "message" => "Bookings Retrieved Successfully",
                 "data" => $bookings
             ]);
-
-
-
         } catch (\Exception $e) {
-            //throw $th;
             return response()->json([
-                "message" => "Server Booking Retrival Error",
+                "message" => "Server Booking Retrieval Error",
                 "error" => $e->getMessage()
-            ]);
+            ], 500);
         }
     }
 
-
-    //!!! Actions
-
-    public function approveBooking(int $booking_id){
+    public function approveBooking(int $booking_id)
+    {
         try {
+            $ownerId = DB::table("owners")
+                ->where("user_id", Auth::id())
+                ->value("id");
 
-            // Get booking by ID
-            $approveBooking = DB::table("bookings")
-                ->where("id", $booking_id)
-                ->first();
-
-            // Booking not found
-            if (!$approveBooking) {
+            if (!$ownerId) {
                 return response()->json([
-                    "error" => "Booking Not Found"
+                    "error" => "Owner profile not found"
                 ], 404);
             }
 
-            // Booking must be pending
-            if ($approveBooking->status !== "pending") {
-                return response()->json([
-                    "error" => "Booking is not pending"
-                ], 400);
-            }
+            return DB::transaction(function () use ($booking_id, $ownerId) {
+                $approveBooking = DB::table("bookings")
+                    ->join("properties", "bookings.property_id", "=", "properties.id")
+                    ->select("bookings.*", "properties.owner_id")
+                    ->where("bookings.id", $booking_id)
+                    ->where("properties.owner_id", $ownerId)
+                    ->first();
 
-            // Approve booking
-            DB::table("bookings")
-                ->where("id", $booking_id)
-                ->update([
-                    "status" => "approved",
-                    "updated_at" => now()
+                if (!$approveBooking) {
+                    return response()->json([
+                        "error" => "Booking not found for this owner"
+                    ], 404);
+                }
+
+                if ($approveBooking->status !== "pending") {
+                    return response()->json([
+                        "error" => "Booking is not pending"
+                    ], 400);
+                }
+
+                DB::table("bookings")
+                    ->where("id", $booking_id)
+                    ->update([
+                        "status" => "approved",
+                        "updated_at" => now()
+                    ]);
+
+                $today = \Carbon\Carbon::today();
+                $moveIn = \Carbon\Carbon::parse($approveBooking->move_in_date);
+                $tenantStatus = $moveIn->lte($today) ? 'active' : 'inactive';
+                $billingStatus = $moveIn->lte($today) ? 'unpaid' : 'pending';
+
+                $tenant = DB::table("tenants")->insertGetId([
+                    "user_id" => $approveBooking->user_id,
+                    "property_id" => $approveBooking->property_id,
+                    "created_at" => now(),
+                    "updated_at" => now(),
+                    "stay_duration" => $approveBooking->stay_duration ?? null,
+                    "move_in_date" => $approveBooking->move_in_date ?? null,
+                    "occupants_num" => $approveBooking->occupants_num ?? null,
+                    "lease_duration" => $approveBooking->lease_duration ?? null,
+                    "room_preference" => $approveBooking->room_preference ?? null,
+                    "notes" => $approveBooking->notes ?? null,
+                    "status" => $tenantStatus,
+                    "agreement" => $approveBooking->agreement ?? null,
                 ]);
 
-            $today = \Carbon\Carbon::today();
-            $moveIn = \Carbon\Carbon::parse($approveBooking->move_in_date);
+                $propertyInfo = DB::table("properties")->where("id", "=", $approveBooking->property_id)->first();
+                if (!$propertyInfo) {
+                    throw new \Exception("Property not found");
+                }
 
-            if ($moveIn->lte($today)) {
-                // Move-in date is today or in the past → activate tenant
-                $tenantStatus = 'active';
-                $billingStatus = 'unpaid';
-            } else {
-                // Move-in date is in the future → keep inactive / pending
-                $tenantStatus = 'inactive';
-                $billingStatus = 'pending';
-            }
+                $rentDue = \Carbon\Carbon::parse($approveBooking->move_in_date);
+                switch ($propertyInfo->payment_frequency) {
+                    case 'monthly':
+                        $rentDue->addMonth();
+                        break;
+                    case 'quarterly':
+                        $rentDue->addMonths(3);
+                        break;
+                    case 'yearly':
+                        $rentDue->addYear();
+                        break;
+                    case 'weekly':
+                        $rentDue->addWeek();
+                        break;
+                    case 'pernight':
+                    case 'daily':
+                        $rentDue->addDay();
+                        break;
+                    default:
+                        break;
+                }
 
-            // Insert into tenants table
-            $tenant = DB::table("tenants")->insertGetId([
-                "user_id" => $approveBooking->user_id,
-                "property_id" => $approveBooking->property_id,
-                "created_at" => now(),
-                "updated_at" => now(),
-                "stay_duration" => $approveBooking->stay_duration ?? null,
-                "move_in_date" => $approveBooking->move_in_date ?? null,
-                "occupants_num" => $approveBooking->occupants_num ?? null,
-                "lease_duration" => $approveBooking->lease_duration ?? null,
-                "room_preference" => $approveBooking->room_preference ?? null,
-                "notes" => $approveBooking->notes ?? null,
-                "status" => $tenantStatus,
-                "agreement" => $approveBooking->agreement ?? null,
-            ]);
+                DB::table("billings")->insertGetId([
+                    "tenant_id" => $tenant,
+                    "property_id" => $approveBooking->property_id,
+                    "rent_amount" => $propertyInfo->price,
+                    "rent_cycle" => $propertyInfo->payment_frequency,
+                    "rent_start" => $approveBooking->move_in_date,
+                    "rent_due" => $rentDue->toDateString(),
+                    "rent_status" => $billingStatus,
+                    "created_at" => now(),
+                    "updated_at" => now(),
+                ]);
 
-            $propertyInfo = DB::table("properties")->where("id", "=", $approveBooking->property_id)->first();
-            
-            if (!$propertyInfo) {
-                throw new \Exception("Property not found");
-            }
+                $userId = DB::table("tenants")->where("id", $tenant)->value("user_id");
+                DB::table("users")->where("id", $userId)->update([
+                    "role" => "tenants"
+                ]);
 
-            $rent_due = $approveBooking->move_in_date; // start from move-in
-            switch($propertyInfo->payment_frequency) {
-                case 'monthly':
-                    $rent_due = \Carbon\Carbon::parse($approveBooking->move_in_date)->addMonth();
-                    break;
-                case 'quarterly':
-                    $rent_due = \Carbon\Carbon::parse($approveBooking->move_in_date)->addMonths(3);
-                    break;
-                case 'yearly':
-                    $rent_due = \Carbon\Carbon::parse($approveBooking->move_in_date)->addYear();
-                    break;
-                case 'weekly':
-                    $rent_due = \Carbon\Carbon::parse($approveBooking->move_in_date)->addWeek();
-                    break;
-                case 'pernight':
-                case 'daily':
-                    $rent_due = \Carbon\Carbon::parse($approveBooking->move_in_date)->addDay();
-                    break;
-                default:
-                    $rent_due = \Carbon\Carbon::parse($approveBooking->move_in_date);
-                    break;
-            }
-            DB::table("billings")->insertGetId([
-                "tenant_id" => $tenant,
-                "property_id" => $approveBooking->property_id,
-                "rent_amount" => $propertyInfo->price,
-                "rent_cycle" => $propertyInfo->payment_frequency,
-                "rent_start" => $approveBooking->move_in_date,
-                "rent_due" => $rent_due,
-                "rent_status" => $billingStatus,
-                "created_at" => now(),
-                "updated_at" => now(),
-            ]);
-
-            $userId = DB::table("tenants")->where("id",$tenant)->value("user_id");
-            DB::table("users")->where("id", $userId)->update([
-                "role" => "tenants"
-            ]);
-            // Delete booking after approval
-            // DB::table("bookings")->where("id", $booking_id)->delete();
-
-            return response()->json([
-                "message" => "Booking approved successfully"
-            ], 200);
-
+                return response()->json([
+                    "message" => "Booking approved successfully"
+                ], 200);
+            });
         } catch (\Exception $e) {
             return response()->json([
                 "message" => "Server Booking Approval Error",
@@ -283,5 +288,4 @@ class BookingController extends Controller
             ], 500);
         }
     }
-
 }

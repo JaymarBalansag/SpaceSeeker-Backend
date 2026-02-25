@@ -24,7 +24,8 @@ class DatabaseSeeder extends Seeder
         PropertyTypeSeeder::class,
         PropertyFacilities::class,
         Amenities::class,
-        AdminSeeder::class
+        AdminSeeder::class,
+        OwnerSeeder::class,
     ]);
     }
 }

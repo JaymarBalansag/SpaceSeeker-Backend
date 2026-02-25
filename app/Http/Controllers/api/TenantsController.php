@@ -143,45 +143,61 @@ class TenantsController extends Controller
 
     public function moveInTenant(Request $request, $id)
     {
-        // Start the transaction
-        DB::beginTransaction();
-
         try {
-            // 1. Update the Tenant Status
-            $tenantUpdated = DB::table('tenants')
-                ->where('id', $id)
-                ->update([
-                    'status' => 'active',
-                    'updated_at' => now(),
-                    // 'move_in_date' => now(), 
-                ]);
+            $ownerId = DB::table("owners")
+                ->where("user_id", Auth::id())
+                ->value("id");
 
-            if (!$tenantUpdated) {
-                throw new \Exception("Tenant not found or already active.");
+            if (!$ownerId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Owner profile not found.'
+                ], 404);
             }
 
-            // 2. Update the related Billing from 'pending' to 'unpaid'
-            // We only update the most recent pending bill for this tenant
-            DB::table('billings')
-                ->where('tenant_id', $id)
-                ->where('rent_status', 'pending')
-                ->update([
-                    'rent_status' => 'unpaid',
-                    'updated_at' => now()
-                ]);
+            $tenant = DB::table('tenants')
+                ->join('properties', 'tenants.property_id', '=', 'properties.id')
+                ->select('tenants.id', 'tenants.status')
+                ->where('tenants.id', $id)
+                ->where('properties.owner_id', $ownerId)
+                ->first();
 
-            // If everything is successful, save changes to database
-            DB::commit();
+            if (!$tenant) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Tenant not found for this owner.'
+                ], 404);
+            }
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Tenant is now Active and billing has been issued.'
-            ], 200);
+            if ($tenant->status === 'active') {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Tenant is already active.'
+                ], 200);
+            }
 
-        } catch (\Exception $e) {
-            // If anything goes wrong, undo ALL changes
-            DB::rollBack();
+            return DB::transaction(function () use ($id) {
+                DB::table('tenants')
+                    ->where('id', $id)
+                    ->update([
+                        'status' => 'active',
+                        'updated_at' => now(),
+                    ]);
 
+                DB::table('billings')
+                    ->where('tenant_id', $id)
+                    ->where('rent_status', 'pending')
+                    ->update([
+                        'rent_status' => 'unpaid',
+                        'updated_at' => now()
+                    ]);
+
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Tenant is now active and billing has been issued.'
+                ], 200);
+            });
+        } catch (\Throwable $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Move-in failed: ' . $e->getMessage()
@@ -222,29 +238,86 @@ class TenantsController extends Controller
     }
 
     public function submitPayment(Request $request) {
-        // 1. Get Tenant ID from Auth
-        $tenantId = DB::table('tenants')->where('user_id', Auth::id())->value('id');
-
-        // 2. Handle File Upload
-        $proofPath = null;
-        if ($request->hasFile('proof')) {
-            $proofPath = $request->file('proof')->store('proofs', 'public');
-        }
-
-        // 3. Insert Payment Record
-        DB::table('payments')->insert([
-            'billing_id'        => $request->billing_id,
-            'amount_paid'       => $request->amount_paid,
-            'payment_method'    => $request->payment_method,
-            'payment_reference' => $request->payment_reference, // Nullable
-            'proof'             => $proofPath,
-            'remarks'           => $request->remarks,
-            'status'            => 'pending', // Waiting for owner review
-            'date_paid'         => now(),
-            'created_at'        => now()
+        $validated = $request->validate([
+            'billing_id' => 'required|integer',
+            'payment_method' => 'required|string|max:50',
+            'amount_paid' => 'required|numeric|min:0.01',
+            'payment_reference' => 'nullable|string|max:100',
+            'proof' => 'required|file|mimes:jpg,jpeg,png|max:5120',
+            'remarks' => 'nullable|string|max:1000',
         ]);
 
-        
-        return response()->json(['message' => 'Payment submitted successfully']);
+        $tenantId = DB::table('tenants')->where('user_id', Auth::id())->value('id');
+        if (!$tenantId) {
+            return response()->json([
+                'message' => 'Tenant profile not found.'
+            ], 404);
+        }
+
+        return DB::transaction(function () use ($validated, $tenantId, $request) {
+            $billing = DB::table('billings')
+                ->where('id', $validated['billing_id'])
+                ->where('tenant_id', $tenantId)
+                ->first();
+
+            if (!$billing) {
+                return response()->json([
+                    'message' => 'Billing record not found for this tenant.'
+                ], 404);
+            }
+
+            if (!in_array($billing->rent_status, ['unpaid', 'overdue'], true)) {
+                return response()->json([
+                    'message' => 'This billing cannot accept payment submissions right now.'
+                ], 422);
+            }
+
+            $hasPendingPayment = DB::table('payments')
+                ->where('billing_id', $billing->id)
+                ->where('status', 'pending')
+                ->exists();
+
+            if ($hasPendingPayment) {
+                return response()->json([
+                    'message' => 'A pending payment already exists for this billing.'
+                ], 409);
+            }
+
+            $submittedAmount = round((float) $validated['amount_paid'], 2);
+            $expectedAmount = round((float) $billing->rent_amount, 2);
+            if ($submittedAmount !== $expectedAmount) {
+                return response()->json([
+                    'message' => 'Submitted amount must exactly match the billing amount.',
+                    'expected_amount' => $expectedAmount,
+                ], 422);
+            }
+
+            $proofPath = $request->file('proof')->store('proofs', 'public');
+
+            $paymentId = DB::table('payments')->insertGetId([
+                'billing_id' => $billing->id,
+                'amount_paid' => $submittedAmount,
+                'payment_method' => $validated['payment_method'],
+                'payment_reference' => $validated['payment_reference'] ?? null,
+                'proof' => $proofPath,
+                'remarks' => $validated['remarks'] ?? null,
+                'status' => 'pending',
+                'date_paid' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            DB::table('billings')
+                ->where('id', $billing->id)
+                ->update([
+                    'rent_status' => 'pending',
+                    'updated_at' => now(),
+                ]);
+
+            return response()->json([
+                'message' => 'Payment submitted successfully.',
+                'payment_id' => $paymentId,
+            ], 201);
+        });
     }
 }

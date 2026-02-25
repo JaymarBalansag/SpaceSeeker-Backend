@@ -15,14 +15,16 @@ return [
     |
     */
 
-    'paths' => ['*'],
+    'paths' => ['api/*', 'broadcasting/auth', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:5173')],
+    'allowed_origins' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('CORS_ALLOWED_ORIGINS', env('FRONTEND_URL', 'http://localhost:5173')))
+    ))),
 
-    // comment when using on delpoyment 
-    'allowed_origins_patterns' => ["*localhost*"],
+    'allowed_origins_patterns' => [],
 
     'allowed_headers' => ['*'],
     // 'allowed_headers' => ['Content-Type', 'X-Requested-With', 'Authorization', 'X-CSRF-TOKEN'],
