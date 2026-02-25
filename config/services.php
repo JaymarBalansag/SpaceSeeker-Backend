@@ -22,6 +22,11 @@ return [
         'key' => env('RESEND_KEY'),
     ],
 
+    'paymongo' => [
+        'secret_key' => env('PAYMONGO_SECRET_KEY'),
+        'public_key' => env('PAYMONGO_PUBLIC_KEY'),
+    ],
+
     'ses' => [
         'key' => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),

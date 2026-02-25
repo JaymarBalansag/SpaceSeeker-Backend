@@ -2,181 +2,394 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Models\Message;
 use App\Events\MessageSent;
+use App\Http\Controllers\Controller;
+use App\Models\Message;
+use App\Observers\Notifications\Logic\NotificationLogicObserver;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Auth;
 
 class MessageController extends Controller
 {
-    public function fetchMessages($userId){
-        $authId = Auth::id();
-
-        $messages = DB::table('messages')
-            ->join('users as sender', 'messages.sender_id', '=', 'sender.id')
-            ->join('users as receiver', 'messages.receiver_id', '=', 'receiver.id')
-            ->where(function($q) use ($authId, $userId) {
-                $q->where('messages.sender_id', $authId)
-                ->where('messages.receiver_id', $userId);
-            })
-            ->orWhere(function($q) use ($authId, $userId) {
-                $q->where('messages.sender_id', $userId)
-                ->where('messages.receiver_id', $authId);
-            })
-            ->orderBy('messages.created_at', 'asc')
-            ->select(
-                'messages.id',
-                'messages.sender_id',
-                'messages.receiver_id',
-                'messages.message',
-                'messages.created_at',
-                'sender.first_name as sender_first_name',
-                'sender.last_name as sender_last_name',
-                'receiver.first_name as receiver_first_name',
-                'receiver.last_name as receiver_last_name'
-            )
-            ->get();
-
-        return response()->json([
-            'messages' => $messages
-        ], 200);
+    public function __construct(
+        protected NotificationService $notificationService,
+        protected NotificationLogicObserver $notificationLogicObserver
+    ) {
     }
 
-    public function chatList() {
+    public function fetchMessages(Request $request, $userId)
+    {
         $authId = Auth::id();
+        [$low, $high] = $this->pair($authId, (int) $userId);
 
-        $chats = DB::table('messages')
-            ->selectRaw("CASE WHEN sender_id = ? THEN receiver_id ELSE sender_id END as user_id", [$authId])
-            ->selectRaw("MAX(created_at) as last_message_time")
-            ->selectRaw("SUBSTRING_INDEX(GROUP_CONCAT(message ORDER BY created_at DESC), ',', 1) as lastMessage")
-            ->where('sender_id', $authId)
-            ->orWhere('receiver_id', $authId)
-            ->groupBy('user_id')
-            ->get();
+        $conversation = DB::table('conversations')
+            ->where('user_low_id', $low)
+            ->where('user_high_id', $high)
+            ->first();
 
-        // Optionally, fetch user info for each chat
-        $chatWithUserInfo = $chats->map(function($chat) {
-            $user = DB::table('users')->where('id', $chat->user_id)->first();
+        if (! $conversation) {
+            return response()->json([
+                'messages' => [],
+                'next_cursor' => null,
+                'has_more' => false,
+                'conversation_id' => null,
+            ], 200);
+        }
+
+        return $this->messagesByConversation($request, $conversation->id);
+    }
+
+    public function chatList(Request $request)
+    {
+        return $this->listConversations($request);
+    }
+
+    public function listConversations(Request $request)
+    {
+        $authId = Auth::id();
+        $limit = max(1, min((int) $request->integer('limit', 20), 50));
+        $cursor = $request->query('cursor');
+
+        $query = DB::table('conversations as c')
+            ->leftJoin('messages as lm', 'lm.id', '=', 'c.last_message_id')
+            ->where(function ($q) use ($authId) {
+                $q->where('c.user_low_id', $authId)
+                    ->orWhere('c.user_high_id', $authId);
+            })
+            ->select(
+                'c.id',
+                'c.user_low_id',
+                'c.user_high_id',
+                'c.property_id',
+                'c.last_message_id',
+                'c.last_message_at',
+                'lm.message as last_message_text'
+            )
+            ->orderByDesc('c.last_message_at')
+            ->orderByDesc('c.id');
+
+        if ($cursor) {
+            [$cursorTime, $cursorId] = $this->decodeCursor($cursor);
+            $query->where(function ($q) use ($cursorTime, $cursorId) {
+                $q->where('c.last_message_at', '<', $cursorTime)
+                    ->orWhere(function ($q2) use ($cursorTime, $cursorId) {
+                        $q2->where('c.last_message_at', '=', $cursorTime)
+                            ->where('c.id', '<', $cursorId);
+                    });
+            });
+        }
+
+        $conversations = $query->limit($limit + 1)->get();
+        $hasMore = $conversations->count() > $limit;
+        $page = $conversations->take($limit)->values();
+
+        $otherUserIds = $page
+            ->map(fn ($c) => (int) ($c->user_low_id == $authId ? $c->user_high_id : $c->user_low_id))
+            ->unique()
+            ->values();
+
+        $users = DB::table('users')
+            ->whereIn('id', $otherUserIds)
+            ->select('id', 'first_name', 'last_name', 'user_img')
+            ->get()
+            ->keyBy('id');
+
+        $chats = $page->map(function ($conversation) use ($authId, $users) {
+            $otherUserId = (int) ($conversation->user_low_id == $authId ? $conversation->user_high_id : $conversation->user_low_id);
+            $user = $users->get($otherUserId);
+
             return [
-                'user_id' => $chat->user_id,
-                'name' => $user->first_name . ' ' . $user->last_name,
-                'lastMessage' => $chat->lastMessage,
-                'last_message_time' => $chat->last_message_time,
-                'profile_photo' => $user->user_img ? asset('storage/' . $user->user_img) : null,
-
+                'conversation_id' => $conversation->id,
+                'user_id' => $otherUserId,
+                'name' => $user ? trim($user->first_name . ' ' . $user->last_name) : null,
+                'lastMessage' => $conversation->last_message_text,
+                'last_message_time' => $conversation->last_message_at,
+                'profile_photo' => ($user && $user->user_img) ? asset('storage/' . $user->user_img) : null,
             ];
         });
 
+        $nextCursor = null;
+        if ($hasMore && $page->isNotEmpty() && $page->last()->last_message_at) {
+            $last = $page->last();
+            $nextCursor = $this->encodeCursor($last->last_message_at, $last->id);
+        }
+
         return response()->json([
-            'chats' => $chatWithUserInfo
-        ],200);
+            'chats' => $chats,
+            'next_cursor' => $nextCursor,
+            'has_more' => $hasMore,
+        ], 200);
     }
 
+    public function startMessage(Request $request)
+    {
+        return $this->startConversation($request);
+    }
 
-    public function sendMessage(Request $request){
+    public function startConversation(Request $request)
+    {
         try {
             $request->validate([
                 'receiver_id' => 'required|exists:users,id',
-                'message' => 'required|string',
+                'property_id' => 'nullable|exists:properties,id',
             ]);
 
-            $id = DB::table('messages')->insertGetId([
-                'sender_id'   => Auth::id(),
-                'receiver_id' => $request->receiver_id,
-                'message'     => $request->message,
-                'created_at'  => now(),
-                'updated_at'  => now(),
-            ]);
-
-            // Re-hydrate as Eloquent model (IMPORTANT)
-            $message = Message::findOrFail($id);
-
-            // Broadcast to receiver only
-            broadcast(new MessageSent($message))->toOthers();
-
-            return response()->json(['message' => $message], 201);
-
-            
-        } catch (\Throwable $th) {
-            return response()->json([
-                'error' => 'Failed to send message',
-                'details' => $th->getMessage()
-            ], 500);        
-        }   
-        
-    }
-
-    public function startMessage(Request $request){
-        try {
-
-            $request->validate([
-                'receiver_id' => 'required|exists:users,id',
-                'property_id' => 'required|integer',
-            ]);
-
-            // Check if a conversation already exists
-            $existingMessage = DB::table('messages')
-                ->where(function($q) use ($request) {
-                    $q->where('sender_id', Auth::id())
-                      ->where('receiver_id', $request->receiver_id);
-                })
-                ->orWhere(function($q) use ($request) {
-                    $q->where('sender_id', $request->receiver_id)
-                      ->where('receiver_id', Auth::id());
-                })
-                ->first();
-
-            if ($existingMessage) {
-                return response()->json([
-                    'message' => 'Conversation already exists',
-                    'messages' => $existingMessage->receiver_id
-                ], 200);
+            $authId = Auth::id();
+            $receiverId = (int) $request->receiver_id;
+            if ($receiverId === $authId) {
+                return response()->json(['error' => 'Cannot start a conversation with yourself'], 422);
             }
 
-            // Gets the info of the user who start a chat
-            $userId = Auth::id();
-            $AuthUserInfo = DB::table("users")
-            ->select("first_name", "last_name")
-            ->where("id", $userId)
-            ->first();
-            $username = $AuthUserInfo->first_name . ' ' . $AuthUserInfo->last_name;
+            [$low, $high] = $this->pair($authId, $receiverId);
 
-            // Get property title
-            $property = DB::table('properties')
-                ->select('title')
-                ->where('id', $request->property_id)
+            $conversation = DB::table('conversations')
+                ->where('user_low_id', $low)
+                ->where('user_high_id', $high)
                 ->first();
-            $propertyTitle = $property ? $property->title : 'Your property';
 
+            $created = false;
+            if (! $conversation) {
+                try {
+                    $id = DB::table('conversations')->insertGetId([
+                        'user_low_id' => $low,
+                        'user_high_id' => $high,
+                        'property_id' => $request->input('property_id'),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $conversation = DB::table('conversations')->where('id', $id)->first();
+                    $created = true;
+                } catch (\Throwable $th) {
+                    // Handles unique-race safely.
+                    $conversation = DB::table('conversations')
+                        ->where('user_low_id', $low)
+                        ->where('user_high_id', $high)
+                        ->first();
+                }
+            }
 
-            // If no existing conversation, create a placeholder message
-            $id = DB::table('messages')->insertGetId([
-                'sender_id'   => Auth::id(),
-                'receiver_id' => $request->receiver_id,
-                'message'     => 'Hi, I\'m ' . $username . ' interested in your property ' . $propertyTitle, // Placeholder
-                'created_at'  => now(),
-                'updated_at'  => now(),
-            ]);
-
-            $createdMessage = DB::table('messages')->where('id', $id)->first();
+            if ($conversation && ! $conversation->property_id && $request->filled('property_id')) {
+                DB::table('conversations')
+                    ->where('id', $conversation->id)
+                    ->update([
+                        'property_id' => $request->input('property_id'),
+                        'updated_at' => now(),
+                    ]);
+            }
 
             return response()->json([
-                'message' => 'Conversation started',
-                'receiver_id' => $createdMessage->receiver_id
+                'message' => 'Conversation ready',
+                'conversation_id' => $conversation->id,
+                'receiver_id' => $receiverId,
+                'created' => $created,
             ], 200);
-
-
         } catch (\Throwable $th) {
-            //throw $th;
-            Log::error('Start Message Error: ' . $th->getMessage());
+            Log::error('Start Conversation Error: ' . $th->getMessage());
             return response()->json([
-                'error' => 'Failed to start message',
-                'details' => $th->getMessage()
+                'error' => 'Failed to start conversation',
+                'details' => $th->getMessage(),
             ], 500);
         }
     }
 
+    public function sendMessage(Request $request)
+    {
+        try {
+            $request->validate([
+                'conversation_id' => 'nullable|exists:conversations,id',
+                'receiver_id' => 'nullable|exists:users,id',
+                'message' => 'required|string',
+            ]);
+
+            if (! $request->filled('conversation_id') && ! $request->filled('receiver_id')) {
+                return response()->json([
+                    'error' => 'Either conversation_id or receiver_id is required',
+                ], 422);
+            }
+
+            $authId = Auth::id();
+            $conversation = null;
+            $receiverId = null;
+
+            if ($request->filled('conversation_id')) {
+                $conversation = DB::table('conversations')
+                    ->where('id', $request->conversation_id)
+                    ->first();
+
+                if (! $conversation) {
+                    return response()->json(['error' => 'Conversation not found'], 404);
+                }
+                if (! $this->isParticipant($conversation, $authId)) {
+                    return response()->json(['error' => 'Forbidden'], 403);
+                }
+
+                $receiverId = ($conversation->user_low_id == $authId)
+                    ? $conversation->user_high_id
+                    : $conversation->user_low_id;
+            } else {
+                $receiverId = (int) $request->receiver_id;
+                if ($receiverId === $authId) {
+                    return response()->json(['error' => 'Cannot message yourself'], 422);
+                }
+
+                [$low, $high] = $this->pair($authId, $receiverId);
+                $conversation = DB::table('conversations')
+                    ->where('user_low_id', $low)
+                    ->where('user_high_id', $high)
+                    ->first();
+
+                if (! $conversation) {
+                    try {
+                        $conversationId = DB::table('conversations')->insertGetId([
+                            'user_low_id' => $low,
+                            'user_high_id' => $high,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                        $conversation = DB::table('conversations')->where('id', $conversationId)->first();
+                    } catch (\Throwable $th) {
+                        $conversation = DB::table('conversations')
+                            ->where('user_low_id', $low)
+                            ->where('user_high_id', $high)
+                            ->first();
+                    }
+                }
+            }
+
+            $messageId = DB::table('messages')->insertGetId([
+                'conversation_id' => $conversation->id,
+                'sender_id' => $authId,
+                'receiver_id' => $receiverId,
+                'message' => $request->message,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            DB::table('conversations')
+                ->where('id', $conversation->id)
+                ->update([
+                    'last_message_id' => $messageId,
+                    'last_message_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+            $message = Message::findOrFail($messageId);
+            broadcast(new MessageSent($message))->toOthers();
+
+            $senderName = trim((string) DB::table('users')
+                ->where('id', $authId)
+                ->selectRaw("CONCAT(first_name, ' ', last_name) as full_name")
+                ->value('full_name'));
+
+            $payload = $this->notificationLogicObserver->buildMessagePayload(
+                $senderName !== '' ? $senderName : 'A user',
+                (int) $conversation->id
+            );
+            $this->notificationService->createForUser((int) $receiverId, $payload);
+
+            return response()->json([
+                'message' => $message,
+                'conversation_id' => $conversation->id,
+            ], 201);
+        } catch (\Throwable $th) {
+            Log::error('Send Message Error: ' . $th->getMessage());
+            return response()->json([
+                'error' => 'Failed to send message',
+                'details' => $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function sendConversationMessage(Request $request, $conversationId)
+    {
+        $request->merge(['conversation_id' => (int) $conversationId]);
+        return $this->sendMessage($request);
+    }
+
+    public function messagesByConversation(Request $request, $conversationId)
+    {
+        $authId = Auth::id();
+        // Hard-cap conversation message paging to 10 items per request.
+        $limit = max(1, min((int) $request->integer('limit', 10), 10));
+
+        $conversation = DB::table('conversations')->where('id', $conversationId)->first();
+        if (! $conversation) {
+            return response()->json(['error' => 'Conversation not found'], 404);
+        }
+        if (! $this->isParticipant($conversation, $authId)) {
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
+
+        $query = DB::table('messages')
+            ->where('conversation_id', $conversation->id)
+            ->select('id', 'conversation_id', 'sender_id', 'receiver_id', 'message', 'created_at', 'updated_at', 'read_at')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+
+        $cursor = $request->query('cursor');
+        if ($cursor) {
+            [$cursorTime, $cursorId] = $this->decodeCursor($cursor);
+            $query->where(function ($q) use ($cursorTime, $cursorId) {
+                $q->where('created_at', '<', $cursorTime)
+                    ->orWhere(function ($q2) use ($cursorTime, $cursorId) {
+                        $q2->where('created_at', '=', $cursorTime)
+                            ->where('id', '<', $cursorId);
+                    });
+            });
+        }
+
+        $rows = $query->limit($limit + 1)->get();
+        $hasMore = $rows->count() > $limit;
+        $page = $rows->take($limit)->values();
+
+        $nextCursor = null;
+        if ($hasMore && $page->isNotEmpty()) {
+            $last = $page->last();
+            $nextCursor = $this->encodeCursor($last->created_at, $last->id);
+        }
+
+        DB::table('messages')
+            ->where('conversation_id', $conversation->id)
+            ->where('receiver_id', $authId)
+            ->whereNull('read_at')
+            ->update([
+                'read_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        return response()->json([
+            'messages' => $page->reverse()->values(),
+            'next_cursor' => $nextCursor,
+            'has_more' => $hasMore,
+            'conversation_id' => $conversation->id,
+        ], 200);
+    }
+
+    private function pair(int $a, int $b): array
+    {
+        return $a < $b ? [$a, $b] : [$b, $a];
+    }
+
+    private function isParticipant(object $conversation, int $userId): bool
+    {
+        return (int) $conversation->user_low_id === $userId || (int) $conversation->user_high_id === $userId;
+    }
+
+    private function encodeCursor(string $timestamp, int $id): string
+    {
+        return $timestamp . '|' . $id;
+    }
+
+    private function decodeCursor(string $cursor): array
+    {
+        $parts = explode('|', $cursor);
+        if (count($parts) !== 2 || ! is_numeric($parts[1])) {
+            abort(422, 'Invalid cursor');
+        }
+
+        return [$parts[0], (int) $parts[1]];
+    }
 }

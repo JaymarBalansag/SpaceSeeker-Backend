@@ -171,8 +171,13 @@ class UserController extends Controller
             $userid = Auth::id();
 
             $user = DB::table("users")
-            ->select("users.*", 
-            DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"))
+            ->leftJoin("owners", "owners.user_id", "=", "users.id")
+            ->select(
+                "users.*",
+                "owners.owner_verification_status",
+                "owners.owner_verified_at",
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url")
+            )
             ->where("users.id", "=", $userid)
             ->get();
 

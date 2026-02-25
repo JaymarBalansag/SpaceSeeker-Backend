@@ -5,10 +5,14 @@ namespace App\Http\Controllers\Api;
 use Exception;
 use Illuminate\Http\Request;
 use App\Services\PropertyService;
+use App\Services\NotificationService;
+use App\Services\SubscriptionLifecycleService;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
+use App\Observers\Notifications\Logic\NotificationLogicObserver;
 use App\Http\Requests\PropertyRequest;
+use App\Http\Requests\PropertyReviewRequest;
 
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -16,10 +20,22 @@ use App\Http\Requests\isSubscribingRequest;
 
 class PropertyController extends Controller
 {
+    protected PropertyService $propertyService;
+    protected SubscriptionLifecycleService $subscriptionLifecycleService;
+    protected NotificationService $notificationService;
+    protected NotificationLogicObserver $notificationLogicObserver;
 
-    public function __construct(PropertyService $propertyService)
+    public function __construct(
+        PropertyService $propertyService,
+        SubscriptionLifecycleService $subscriptionLifecycleService,
+        NotificationService $notificationService,
+        NotificationLogicObserver $notificationLogicObserver
+    )
     {
         $this->propertyService = $propertyService;
+        $this->subscriptionLifecycleService = $subscriptionLifecycleService;
+        $this->notificationService = $notificationService;
+        $this->notificationLogicObserver = $notificationLogicObserver;
     }
 
     public function isSubscribing(isSubscribingRequest $request){
@@ -113,12 +129,20 @@ class PropertyController extends Controller
         }
     }
 
-    protected $propertyService;
-
     // Create Property
     public function createProperty(PropertyRequest $request)
     {
         try {
+            $subscriptionGuard = $this->ensureOwnerCanManageProperties();
+            if ($subscriptionGuard) {
+                return $subscriptionGuard;
+            }
+
+            $listingGuard = $this->ensureOwnerHasListingSlot();
+            if ($listingGuard) {
+                return $listingGuard;
+            }
+
             $validated = $request->validated();
 
             // Extract thumbnail path
@@ -180,9 +204,24 @@ class PropertyController extends Controller
 
     public function readProperties(){
         try {
+            $reviewSummary = DB::table('property_reviews')
+                ->select(
+                    'property_id',
+                    DB::raw('ROUND(AVG(rating), 1) as average_rating'),
+                    DB::raw('COUNT(*) as total_reviews')
+                )
+                ->groupBy('property_id');
+
             $properties = DB::table("properties")
+                ->leftJoin('owners', 'owners.id', '=', 'properties.owner_id')
+                ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
+                    $join->on('review_summary.property_id', '=', 'properties.id');
+                })
                 ->select(
                     "properties.*",
+                    "owners.owner_verification_status",
+                    DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
+                    DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
                     DB::raw("
                         CASE 
                             WHEN properties.thumbnail IS NOT NULL 
@@ -287,20 +326,159 @@ class PropertyController extends Controller
         }
     }
 
+    public function updateAvailability(Request $request, int $id)
+    {
+        try {
+            $request->validate([
+                'is_available' => 'required|boolean',
+            ]);
+
+            $ownerId = DB::table("owners")
+                ->where("user_id", Auth::id())
+                ->value("id");
+
+            if (!$ownerId) {
+                return response()->json([
+                    'message' => 'Owner profile not found.'
+                ], 404);
+            }
+
+            $property = DB::table("properties")
+                ->where("id", $id)
+                ->where("owner_id", $ownerId)
+                ->first();
+
+            if (!$property) {
+                return response()->json([
+                    'message' => 'Property not found or unauthorized.'
+                ], 404);
+            }
+
+            DB::table("properties")
+                ->where("id", $id)
+                ->update([
+                    'is_available' => (bool) $request->boolean('is_available'),
+                    'updated_at' => now(),
+                ]);
+
+            return response()->json([
+                'message' => $request->boolean('is_available')
+                    ? 'Property marked as available.'
+                    : 'Property marked as fully booked.',
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'message' => 'Unable to update property availability.',
+                'error' => $th->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function deleteOwnerProperty(int $id)
+    {
+        try {
+            $ownerId = DB::table("owners")
+                ->where("user_id", Auth::id())
+                ->value("id");
+
+            if (!$ownerId) {
+                return response()->json([
+                    'message' => 'Owner profile not found.'
+                ], 404);
+            }
+
+            $property = DB::table("properties")
+                ->where("id", $id)
+                ->where("owner_id", $ownerId)
+                ->first();
+
+            if (!$property) {
+                return response()->json([
+                    'message' => 'Property not found or unauthorized.'
+                ], 404);
+            }
+
+            return DB::transaction(function () use ($property, $id) {
+                $billingIds = DB::table('billings')
+                    ->where('property_id', $id)
+                    ->pluck('id');
+
+                if ($billingIds->isNotEmpty()) {
+                    DB::table('payments')
+                        ->whereIn('billing_id', $billingIds->all())
+                        ->delete();
+                }
+
+                DB::table('billings')->where('property_id', $id)->delete();
+
+                $imagePaths = DB::table('property_images')
+                    ->where('property_id', $id)
+                    ->pluck('img_path')
+                    ->filter()
+                    ->values()
+                    ->all();
+
+                DB::table('property_images')->where('property_id', $id)->delete();
+
+                DB::table('property_amenities')->where('property_id', $id)->delete();
+                DB::table('property_facilities')->where('property_id', $id)->delete();
+                DB::table('utilities')->where('property_id', $id)->delete();
+                DB::table('custom_utilities')->where('property_id', $id)->delete();
+                DB::table('custom_amenities')->where('property_id', $id)->delete();
+                DB::table('custom_facilities')->where('property_id', $id)->delete();
+                DB::table('property_reviews')->where('property_id', $id)->delete();
+                DB::table('bookings')->where('property_id', $id)->delete();
+                DB::table('tenants')->where('property_id', $id)->delete();
+
+                DB::table('properties')->where('id', $id)->delete();
+
+                if (!empty($property->thumbnail)) {
+                    Storage::disk('public')->delete($property->thumbnail);
+                }
+                if (!empty($imagePaths)) {
+                    Storage::disk('public')->delete($imagePaths);
+                }
+
+                return response()->json([
+                    'message' => 'Property deleted successfully.'
+                ], 200);
+            });
+        } catch (\Throwable $th) {
+            return response()->json([
+                'message' => 'Unable to delete property.',
+                'error' => $th->getMessage(),
+            ], 500);
+        }
+    }
+
     public function showProperty($id)
     {
         try {
+            $reviewSummary = DB::table('property_reviews')
+                ->select(
+                    'property_id',
+                    DB::raw('ROUND(AVG(rating), 1) as average_rating'),
+                    DB::raw('COUNT(*) as total_reviews')
+                )
+                ->groupBy('property_id');
+
             // Fetch main property
             $property = DB::table('properties')
                 ->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
                 ->join('owners', 'properties.owner_id', '=', 'owners.id')
                 ->join('users', 'owners.user_id', '=', 'users.id')
                 ->join("subscriptions", "owners.id", '=', "subscriptions.owner_id")
+                ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
+                    $join->on('review_summary.property_id', '=', 'properties.id');
+                })
                 ->select(
                     'properties.*',
                     'users.id as owner_id', 
                     'users.first_name as owner_first_name',
                     'users.last_name as owner_last_name',
+                    'owners.owner_verification_status',
+                    DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
+                    DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img"),
                     'property_types.id as type_id',
                     'property_types.type_name',
@@ -334,12 +512,29 @@ class PropertyController extends Controller
                 ->where('property_facilities.property_id', $id)
                 ->pluck('facilities.facility_name');
 
+            $customAmenities = DB::table('custom_amenities')
+                ->where('property_id', $id)
+                ->pluck('custom_amenity');
+
+            $customFacilities = DB::table('custom_facilities')
+                ->where('property_id', $id)
+                ->pluck('custom_facility');
+
+            $utilities = DB::table('utilities')
+                ->where('property_id', $id)
+                ->pluck('utility_name');
+
+            $customUtilities = DB::table('custom_utilities')
+                ->where('property_id', $id)
+                ->pluck('custom_utility');
+
             return response()->json([
                 'property' => [
                     'id' => $property->id,
                     'owner_id' => $property->owner_id,
                     'owner_name' => $property->owner_first_name . ' ' . $property->owner_last_name,
                     'owner_profile_photo' => $property->user_img,
+                    'owner_verification_status' => $property->owner_verification_status ?? 'unverified',
                     'title' => $property->title,
                     'description' => $property->description,
                     'price' => $property->price,
@@ -349,10 +544,42 @@ class PropertyController extends Controller
                     'type_name' => $property->type_name,
                     'image_url' => $property->thumbnail ? asset('storage/' . $property->thumbnail) : null,
                     'amenities' => $amenities,
+                    'custom_amenities' => $customAmenities,
                     'facilities' => $facilities,
+                    'custom_facilities' => $customFacilities,
+                    'utilities' => $utilities,
+                    'custom_utilities' => $customUtilities,
+                    'utilities_included' => (bool) $property->utilities_included,
+                    'furnishing' => $property->furnishing,
+                    'bedrooms' => $property->bedrooms,
+                    'single_bed' => $property->single_bed,
+                    'double_bed' => $property->double_bed,
+                    'public_bath' => $property->public_bath,
+                    'private_bath' => $property->private_bath,
+                    'bed_space' => $property->bed_space,
+                    'floor_area' => $property->floor_area,
+                    'lot_area' => $property->lot_area,
+                    'max_size' => $property->max_size,
+                    'advance_payment_months' => $property->advance_payment_months,
+                    'deposit_required' => $property->deposit_required,
+                    'lease_term_months' => $property->lease_term_months,
+                    'renewal_option' => $property->renewal_option,
+                    'notice_period' => $property->notice_period,
+                    'rules' => $property->rules,
+                    'has_curfew' => (bool) $property->has_curfew,
+                    'curfew_from' => $property->curfew_from,
+                    'curfew_to' => $property->curfew_to,
+                    'status' => $property->status,
+                    'is_available' => (bool) $property->is_available,
+                    'region_name' => $property->region_name,
+                    'state_name' => $property->state_name,
+                    'town_name' => $property->town_name,
+                    'village_name' => $property->village_name,
                     'images' => $images,
                     'latitude' => $property->latitude,
                     'longitude' => $property->longitude,
+                    'average_rating' => (float) $property->average_rating,
+                    'total_reviews' => (int) $property->total_reviews,
                 ],
                 'message' => 'Property details fetched successfully'
             ]);
@@ -366,10 +593,23 @@ class PropertyController extends Controller
 
     public function getPropertyByType($type_id, $property_id){
         try {
+            $reviewSummary = DB::table('property_reviews')
+                ->select(
+                    'property_id',
+                    DB::raw('ROUND(AVG(rating), 1) as average_rating'),
+                    DB::raw('COUNT(*) as total_reviews')
+                )
+                ->groupBy('property_id');
             
             $property = DB::table("properties")
+            ->leftJoin("owners", "owners.id", "=", "properties.owner_id")
+            ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
+                $join->on('review_summary.property_id', '=', 'properties.id');
+            })
             ->join("property_types", "properties.property_type_id", "=", "property_types.id")
-            ->select("properties.*", "property_types.type_name",
+            ->select("properties.*", "property_types.type_name", "owners.owner_verification_status",
+            DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
+            DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
             DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url"))
             ->where("properties.property_type_id", "=", $type_id,)
             ->where("properties.id", "!=", $property_id)
@@ -395,10 +635,176 @@ class PropertyController extends Controller
         }
     }
 
+    public function getPropertyReviews($id)
+    {
+        try {
+            $propertyExists = DB::table('properties')->where('id', $id)->exists();
+            if (!$propertyExists) {
+                return response()->json([
+                    'message' => 'Property not found'
+                ], 404);
+            }
+
+            $reviews = DB::table('property_reviews')
+                ->join('users', 'property_reviews.user_id', '=', 'users.id')
+                ->select(
+                    'property_reviews.id',
+                    'property_reviews.rating',
+                    'property_reviews.comment',
+                    'property_reviews.created_at',
+                    DB::raw("CONCAT(users.first_name, ' ', users.last_name) as user_name"),
+                    DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img")
+                )
+                ->where('property_reviews.property_id', $id)
+                ->orderByDesc('property_reviews.created_at')
+                ->get();
+
+            $totalReviews = $reviews->count();
+            $averageRating = $totalReviews > 0 ? round((float) $reviews->avg('rating'), 1) : 0;
+
+            return response()->json([
+                'reviews' => $reviews,
+                'average_rating' => $averageRating,
+                'total_reviews' => $totalReviews,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error fetching property reviews',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function submitPropertyReview(PropertyReviewRequest $request, $id)
+    {
+        try {
+            $userId = Auth::id();
+            $validated = $request->validated();
+
+            $property = DB::table('properties')
+                ->select('id', 'owner_id')
+                ->where('id', $id)
+                ->first();
+
+            if (!$property) {
+                return response()->json([
+                    'message' => 'Property not found'
+                ], 404);
+            }
+
+            $ownerUserId = DB::table('owners')
+                ->where('id', $property->owner_id)
+                ->value('user_id');
+
+            if ((int) $ownerUserId === (int) $userId) {
+                return response()->json([
+                    'message' => 'Owners cannot review their own property.'
+                ], 403);
+            }
+
+            $isEligibleTenant = DB::table('tenants')
+                ->where('user_id', $userId)
+                ->where('property_id', $id)
+                ->where(function ($query) {
+                    $query->where('status', 'active')
+                        ->orWhereDate('move_in_date', '<=', now()->toDateString());
+                })
+                ->exists();
+
+            if (!$isEligibleTenant) {
+                return response()->json([
+                    'message' => 'Only tenants who have moved in can review this property.'
+                ], 403);
+            }
+
+            $existingReview = DB::table('property_reviews')
+                ->where('property_id', $id)
+                ->where('user_id', $userId)
+                ->first();
+
+            if ($existingReview) {
+                DB::table('property_reviews')
+                    ->where('id', $existingReview->id)
+                    ->update([
+                        'rating' => $validated['rating'],
+                        'comment' => $validated['comment'],
+                        'updated_at' => now(),
+                    ]);
+
+                $tenantName = trim((string) DB::table('users')
+                    ->where('id', $userId)
+                    ->selectRaw("CONCAT(first_name, ' ', last_name) as full_name")
+                    ->value('full_name'));
+                $propertyName = (string) DB::table('properties')->where('id', $id)->value('title');
+
+                if ($ownerUserId) {
+                    $payload = $this->notificationLogicObserver->buildTenantReviewPayload(
+                        $tenantName !== '' ? $tenantName : 'A tenant',
+                        $propertyName !== '' ? $propertyName : 'your property',
+                        (int) $validated['rating']
+                    );
+                    $this->notificationService->createForUser((int) $ownerUserId, $payload);
+                }
+
+                return response()->json([
+                    'message' => 'Review updated successfully.',
+                ], 200);
+            }
+
+            DB::table('property_reviews')->insert([
+                'property_id' => $id,
+                'user_id' => $userId,
+                'rating' => $validated['rating'],
+                'comment' => $validated['comment'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $tenantName = trim((string) DB::table('users')
+                ->where('id', $userId)
+                ->selectRaw("CONCAT(first_name, ' ', last_name) as full_name")
+                ->value('full_name'));
+            $propertyName = (string) DB::table('properties')->where('id', $id)->value('title');
+
+            if ($ownerUserId) {
+                $payload = $this->notificationLogicObserver->buildTenantReviewPayload(
+                    $tenantName !== '' ? $tenantName : 'A tenant',
+                    $propertyName !== '' ? $propertyName : 'your property',
+                    (int) $validated['rating']
+                );
+                $this->notificationService->createForUser((int) $ownerUserId, $payload);
+            }
+
+            return response()->json([
+                'message' => 'Review submitted successfully.',
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error submitting property review',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function getFilteredProperty(Request $request){
         try {
+            $reviewSummary = DB::table('property_reviews')
+                ->select(
+                    'property_id',
+                    DB::raw('ROUND(AVG(rating), 1) as average_rating'),
+                    DB::raw('COUNT(*) as total_reviews')
+                )
+                ->groupBy('property_id');
+
             $query = DB::table('properties')
+                ->leftJoin('owners', 'owners.id', '=', 'properties.owner_id')
+                ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
+                    $join->on('review_summary.property_id', '=', 'properties.id');
+                })
                 ->select('properties.*',
+                    'owners.owner_verification_status',
+                    DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
+                    DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL 
                             THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
                             ELSE NULL END as image_url")
@@ -466,9 +872,24 @@ class PropertyController extends Controller
 
     public function getTypeFilter(Request $request) {
         try {
+            $reviewSummary = DB::table('property_reviews')
+                ->select(
+                    'property_id',
+                    DB::raw('ROUND(AVG(rating), 1) as average_rating'),
+                    DB::raw('COUNT(*) as total_reviews')
+                )
+                ->groupBy('property_id');
+
             $query = DB::table('properties')
+                ->leftJoin('owners', 'owners.id', '=', 'properties.owner_id')
+                ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
+                    $join->on('review_summary.property_id', '=', 'properties.id');
+                })
                 ->select(
                     'properties.*',
+                    'owners.owner_verification_status',
+                    DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
+                    DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL 
                             THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
                             ELSE NULL END as image_url")
@@ -515,9 +936,24 @@ class PropertyController extends Controller
 
             
 
+            $reviewSummary = DB::table('property_reviews')
+                ->select(
+                    'property_id',
+                    DB::raw('ROUND(AVG(rating), 1) as average_rating'),
+                    DB::raw('COUNT(*) as total_reviews')
+                )
+                ->groupBy('property_id');
+
             $query = DB::table('properties')
+                ->leftJoin('owners', 'owners.id', '=', 'properties.owner_id')
+                ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
+                    $join->on('review_summary.property_id', '=', 'properties.id');
+                })
                 ->select(
                     'properties.*',
+                    'owners.owner_verification_status',
+                    DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
+                    DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL 
                             THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
                             ELSE NULL END as image_url")
@@ -611,6 +1047,11 @@ class PropertyController extends Controller
     }
 
     public function updateProperty(Request $request, int $id){
+        $subscriptionGuard = $this->ensureOwnerCanManageProperties();
+        if ($subscriptionGuard) {
+            return $subscriptionGuard;
+        }
+
         DB::beginTransaction();
         try {
             $userId = Auth::id();
@@ -724,7 +1165,56 @@ class PropertyController extends Controller
         }
     }
 
-    
+    private function ensureOwnerCanManageProperties()
+    {
+        $snapshot = $this->subscriptionLifecycleService->getOwnerSubscriptionSnapshotByUserId(Auth::id());
+        if (!($snapshot['can_manage_properties'] ?? false)) {
+            return response()->json([
+                'message' => 'Subscription expired or inactive. Renew to manage properties.',
+                'subscription' => $snapshot,
+            ], 403);
+        }
+
+        return null;
+    }
+
+    private function ensureOwnerHasListingSlot()
+    {
+        $owner = DB::table('owners')->where('user_id', Auth::id())->first();
+        if (!$owner) {
+            return response()->json([
+                'message' => 'Owner profile not found.',
+            ], 404);
+        }
+
+        $activeSubscription = DB::table('subscriptions')
+            ->where('owner_id', $owner->id)
+            ->where('status', 'active')
+            ->whereDate('end_date', '>=', now()->toDateString())
+            ->orderByDesc('end_date')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$activeSubscription) {
+            return response()->json([
+                'message' => 'No active subscription found.',
+            ], 403);
+        }
+
+        $propertyCount = DB::table('properties')
+            ->where('owner_id', $owner->id)
+            ->count();
+
+        if ($propertyCount >= (int) $activeSubscription->listing_limit) {
+            return response()->json([
+                'message' => 'Listing limit reached for your current subscription plan.',
+                'listing_limit' => (int) $activeSubscription->listing_limit,
+                'current_listings' => $propertyCount,
+            ], 403);
+        }
+
+        return null;
+    }
 
 
 
