@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\OwnerReportController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
+use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
 use App\Http\Controllers\Api\EmailVerificationController;
@@ -230,6 +231,10 @@ Route::middleware(["auth:sanctum", "is_owner", "verified"])->group(function() {
 
 Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
     // Admin specific routes can be added here
+    Route::controller(AdminDashboardController::class)->group(function() {
+        Route::get('/admin/overview', 'overview');
+    });
+
     Route::controller(AdminPropertyController::class)->group(function() {
         Route::get("/admin/properties/active", "getActiveProperties");
         Route::get("/admin/properties/pending", "getPendingProperties");
