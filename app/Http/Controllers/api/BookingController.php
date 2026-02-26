@@ -23,11 +23,6 @@ class BookingController extends Controller
             $propertyId = $request->property_id;
             $userId = Auth::id();
 
-            $stayDuration = $request->stay_months;
-            if ($stayDuration === "custom") {
-                $stayDuration = $request->custom_months;
-            }
-
             $isOwner = DB::table("owners")->where("user_id", $userId)->exists();
             if ($isOwner) {
                 return response()->json(["error" => "Owners cannot book properties."], 403);
@@ -61,12 +56,6 @@ class BookingController extends Controller
                 return response()->json(["error" => "Agreement checkbox must be accepted"], 422);
             }
 
-            if ($property->type_name === "Boarding House") {
-                if (empty($stayDuration) || intval($stayDuration) <= 0) {
-                    return response()->json(["error" => "Invalid stay duration"], 422);
-                }
-            }
-
             if (in_array($property->type_name, ["Apartment", "Condo", "House", "Commercial Space"], true)) {
                 if (empty($request->lease_duration) || intval($request->lease_duration) <= 0) {
                     return response()->json(["error" => "Invalid lease duration"], 422);
@@ -81,17 +70,24 @@ class BookingController extends Controller
                 return response()->json(["error" => "Move-in date cannot be in the past"], 422);
             }
 
+            $request->validate([
+                'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            ]);
+
+            $validIdPath = $request->file('valid_id')->store('bookings/ids', 'public');
+
             $bookingId = DB::table('bookings')->insertGetId([
                 'user_id' => $userId,
                 'property_id' => $propertyId,
                 'status' => 'pending',
-                'stay_duration' => $stayDuration,
+                'stay_duration' => null,
                 'occupants_num' => $request->occupant_num,
                 'move_in_date' => $request->move_in_date,
                 'lease_duration' => $request->lease_duration,
                 'room_preference' => $request->room_preference,
                 'notes' => $request->notes,
                 'agreement' => $request->agreement,
+                'valid_id_path' => $validIdPath,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -138,6 +134,12 @@ class BookingController extends Controller
                 ], 404);
             }
 
+            $status = trim((string) request()->query("status", "pending"));
+            $allowedStatuses = ["pending", "approved", "rejected"];
+            if (!in_array($status, $allowedStatuses, true)) {
+                $status = "pending";
+            }
+
             $bookings = DB::table("bookings")
                 ->join("properties", "bookings.property_id", "=", "properties.id")
                 ->join("property_types", "properties.property_type_id", "=", "property_types.id")
@@ -146,12 +148,15 @@ class BookingController extends Controller
                     "bookings.*",
                     "users.first_name",
                     "users.last_name",
+                    "users.email",
                     "properties.id as property_id",
                     "properties.title",
-                    "property_types.type_name"
+                    "property_types.type_name",
+                    DB::raw("CASE WHEN bookings.valid_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', bookings.valid_id_path) ELSE NULL END as valid_id_url")
                 )
-                ->where("bookings.status", "pending")
                 ->where("properties.owner_id", $owner->id)
+                ->where("bookings.status", $status)
+                ->orderByDesc("bookings.created_at")
                 ->get();
 
             if ($bookings->isEmpty()) {
@@ -168,6 +173,57 @@ class BookingController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 "message" => "Server Booking Retrieval Error",
+                "error" => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getMyBookings(Request $request)
+    {
+        try {
+            $userId = Auth::id();
+            $status = trim((string) $request->query("status", "all"));
+            $allowedStatuses = ["all", "pending", "approved", "rejected"];
+            if (!in_array($status, $allowedStatuses, true)) {
+                $status = "all";
+            }
+
+            $query = DB::table("bookings")
+                ->join("properties", "bookings.property_id", "=", "properties.id")
+                ->join("property_types", "properties.property_type_id", "=", "property_types.id")
+                ->join("owners", "properties.owner_id", "=", "owners.id")
+                ->join("users as owner_user", "owners.user_id", "=", "owner_user.id")
+                ->where("bookings.user_id", $userId)
+                ->select(
+                    "bookings.id",
+                    "bookings.status",
+                    "bookings.move_in_date",
+                    "bookings.occupants_num",
+                    "bookings.lease_duration",
+                    "bookings.notes",
+                    "bookings.rejection_reason",
+                    "bookings.created_at",
+                    "properties.id as property_id",
+                    "properties.title",
+                    "property_types.type_name",
+                    DB::raw("CONCAT(owner_user.first_name, ' ', owner_user.last_name) as owner_name"),
+                    DB::raw("CASE WHEN bookings.valid_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', bookings.valid_id_path) ELSE NULL END as valid_id_url")
+                )
+                ->orderByDesc("bookings.created_at");
+
+            if ($status !== "all") {
+                $query->where("bookings.status", $status);
+            }
+
+            $bookings = $query->get();
+
+            return response()->json([
+                "message" => "My bookings retrieved successfully",
+                "data" => $bookings
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Server booking retrieval error",
                 "error" => $e->getMessage()
             ], 500);
         }
@@ -284,6 +340,61 @@ class BookingController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 "message" => "Server Booking Approval Error",
+                "error" => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function rejectBooking(Request $request, int $booking_id)
+    {
+        try {
+            $ownerId = DB::table("owners")
+                ->where("user_id", Auth::id())
+                ->value("id");
+
+            if (!$ownerId) {
+                return response()->json([
+                    "error" => "Owner profile not found"
+                ], 404);
+            }
+
+            $validated = $request->validate([
+                "reason" => "required|string|max:500"
+            ]);
+
+            $booking = DB::table("bookings")
+                ->join("properties", "bookings.property_id", "=", "properties.id")
+                ->select("bookings.*", "properties.owner_id")
+                ->where("bookings.id", $booking_id)
+                ->where("properties.owner_id", $ownerId)
+                ->first();
+
+            if (!$booking) {
+                return response()->json([
+                    "error" => "Booking not found for this owner"
+                ], 404);
+            }
+
+            if ($booking->status !== "pending") {
+                return response()->json([
+                    "error" => "Only pending bookings can be rejected"
+                ], 422);
+            }
+
+            DB::table("bookings")
+                ->where("id", $booking_id)
+                ->update([
+                    "status" => "rejected",
+                    "rejection_reason" => trim($validated["reason"]),
+                    "updated_at" => now()
+                ]);
+
+            return response()->json([
+                "message" => "Booking rejected successfully"
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Server Booking Rejection Error",
                 "error" => $e->getMessage()
             ], 500);
         }
