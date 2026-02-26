@@ -148,6 +148,7 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
 
     Route::controller(BookingController::class)->group(function() {
         Route::post('/bookings/submit_booking', 'submitBookingRequest');
+        Route::get('/bookings/my', 'getMyBookings');
     });
 
     Route::controller(PropertyController::class)->group(function() {
@@ -214,6 +215,7 @@ Route::middleware(["auth:sanctum", "is_owner", "verified"])->group(function() {
     Route::controller(BookingController::class)->group(function(){
         Route::get("/bookings/pending", "getPendingUserBookings");
         Route::post('/bookings/{booking_id}/approve', 'approveBooking');
+        Route::post('/bookings/{booking_id}/reject', 'rejectBooking');
     });
 
     Route::controller(TenantsController::class)->group(function() {
