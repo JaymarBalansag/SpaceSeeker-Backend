@@ -245,6 +245,7 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         
         // Actions
         Route::put('/admin/properties/{id}/approve', 'approveProperty');
+        Route::put('/admin/properties/{id}/reject', 'rejectProperty');
     });
 
     Route::controller(AdminOwnerController::class)->group(function(){
