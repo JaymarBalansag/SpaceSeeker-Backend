@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
+use App\Http\Controllers\Api\Admin\Booking\BookingController as AdminBookingController;
 use App\Http\Controllers\Api\EmailVerificationController;
 
 Route::get('/email/verify/{id}/{hash}', function (Request $request, $id, $hash) {
@@ -245,6 +246,7 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         
         // Actions
         Route::put('/admin/properties/{id}/approve', 'approveProperty');
+        Route::put('/admin/properties/{id}/reject', 'rejectProperty');
     });
 
     Route::controller(AdminOwnerController::class)->group(function(){
@@ -259,5 +261,12 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::get("/admin/users", "getAllUsers");
         Route::get("/admin/users/completed", "getCompleteProfile");
         Route::get("/admin/users/incomplete", "getIncompleteProfile");
+        Route::get("/admin/users/{id}", "getUserDetails");
+    });
+
+    Route::controller(AdminBookingController::class)->group(function() {
+        Route::get('/admin/bookings', 'index');
+        Route::get('/admin/bookings/{id}', 'show');
+        Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
 });

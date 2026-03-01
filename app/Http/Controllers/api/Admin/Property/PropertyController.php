@@ -4,10 +4,16 @@ namespace App\Http\Controllers\Api\Admin\Property;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use App\Http\Controllers\Controller;
 
 class PropertyController extends Controller
 {
+    public function showPropertyDetails($id)
+    {
+        return $this->ShowProperties($id);
+    }
 
     // Show property when admin click the show more details
     public function ShowProperties($id){
@@ -23,7 +29,7 @@ class PropertyController extends Controller
             $id = intval($id); // Ensure ID is an integer
 
             // check if property ID exists
-            $checkedId = DB::table("properties")->where("id", "=", $id)->firstOrFail();
+            $checkedId = DB::table("properties")->where("id", "=", $id)->first();
             if(!$checkedId){
                 return response()->json([
                     'status' => 'error',
@@ -31,27 +37,65 @@ class PropertyController extends Controller
                 ], 404);
             }
 
-            // This is for getting the information of all properties
-            $property = DB::table("properties")
-            ->join("regions", "properties.region_id", "=", "regions.id")
-            ->join("provinces", "properties.province_id", "=", "provinces.id")
-            ->join("muncities", "properties.muncity_id", "=", "muncities.id")
-            ->join("barangays", "properties.barangay_id", "=", "barangays.id")
-            ->join("owners", "properties.owner_id", "=", "owners.id")
-            ->join("users", "owners.user_id", "=", "users.id")
-            ->join("property_types", "properties.property_type_id", "=", "property_types.id")
-            ->select(
-                "properties.*",
-                "users.*",
-                "regions.regDesc",
-                "provinces.provDesc",
-                "barangays.brgyDesc",
-                "muncities.muncityDesc",
-                "property_types.type_name",
-                DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as thumbnail_url")
-            )
-            ->where("properties.id", "=", $checkedId->id)
-            ->first();
+            // Build a resilient details query. Local DB may not have all lookup tables.
+            $hasRegions = Schema::hasTable('regions');
+            $hasProvinces = Schema::hasTable('provinces');
+            $hasMunCities = Schema::hasTable('muncities');
+            $hasBarangays = Schema::hasTable('barangays');
+            $hasOwners = Schema::hasTable('owners');
+            $hasUsers = Schema::hasTable('users');
+            $hasPropertyTypes = Schema::hasTable('property_types');
+
+            $propertyQuery = DB::table("properties")->select("properties.*");
+
+            if ($hasRegions) {
+                $propertyQuery->leftJoin("regions", "properties.region_id", "=", "regions.id")
+                    ->addSelect("regions.regDesc");
+            } else {
+                $propertyQuery->addSelect(DB::raw("properties.region_name as regDesc"));
+            }
+
+            if ($hasProvinces) {
+                $propertyQuery->leftJoin("provinces", "properties.province_id", "=", "provinces.id")
+                    ->addSelect("provinces.provDesc");
+            } else {
+                $propertyQuery->addSelect(DB::raw("properties.state_name as provDesc"));
+            }
+
+            if ($hasMunCities) {
+                $propertyQuery->leftJoin("muncities", "properties.muncity_id", "=", "muncities.id")
+                    ->addSelect("muncities.muncityDesc");
+            } else {
+                $propertyQuery->addSelect(DB::raw("properties.town_name as muncityDesc"));
+            }
+
+            if ($hasBarangays) {
+                $propertyQuery->leftJoin("barangays", "properties.barangay_id", "=", "barangays.id")
+                    ->addSelect("barangays.brgyDesc");
+            } else {
+                $propertyQuery->addSelect(DB::raw("properties.village_name as brgyDesc"));
+            }
+
+            if ($hasOwners) {
+                $propertyQuery->leftJoin("owners", "properties.owner_id", "=", "owners.id");
+
+                if ($hasUsers) {
+                    $propertyQuery->leftJoin("users", "owners.user_id", "=", "users.id")
+                        ->addSelect("users.*");
+                }
+            }
+
+            if ($hasPropertyTypes) {
+                $propertyQuery->leftJoin("property_types", "properties.property_type_id", "=", "property_types.id")
+                    ->addSelect("property_types.type_name");
+            } else {
+                $propertyQuery->addSelect(DB::raw("NULL as type_name"));
+            }
+
+            $property = $propertyQuery
+                ->addSelect(DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as thumbnail_url"))
+                ->where("properties.id", "=", $checkedId->id)
+                ->first();
 
             // Get Property Images
             $propertyImages = DB::table("property_images")
@@ -67,7 +111,7 @@ class PropertyController extends Controller
             ->join("facilities", "property_facilities.facility_id", "=", "facilities.id")
             ->select(
                 "property_facilities.property_id",
-                "facilities.name",
+                "facilities.facility_name as name",
             )
             ->where("property_facilities.property_id", "=", $checkedId->id)
             ->get();
@@ -75,15 +119,17 @@ class PropertyController extends Controller
             // Get Property Amenities
             $propertyAmenities = DB::table("property_amenities")
             ->join("amenities", "property_amenities.amenity_id", "=", "amenities.id")
-            ->select("property_amenities.property_id", "amenities.name")
+            ->select("property_amenities.property_id", "amenities.amenity_name as name")
             ->where("property_amenities.property_id", "=", $checkedId->id)
             ->get();
 
             // Get Property Utilities
-            $propertyUtilities = DB::table("property_utilities")
-            ->join("utilities", "property_utilities.utility_id", "=", "utilities.id")
-            ->select("property_utilities.property_id", "utilities.name")
-            ->where("property_utilities.property_id", "=", $checkedId->id)
+            $propertyUtilities = DB::table("utilities")
+            ->select(
+                "utilities.property_id",
+                "utilities.utility_name as name"
+            )
+            ->where("utilities.property_id", "=", $checkedId->id)
             ->get();
 
             return response()->json([
@@ -101,7 +147,11 @@ class PropertyController extends Controller
 
 
         } catch (\Exception $e) {
-            //throw $th;
+            Log::error('Failed to fetch admin property details', [
+                'property_id' => $id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => 'An error occurred while fetching property details.',
@@ -268,6 +318,43 @@ class PropertyController extends Controller
             //throw $th;
             return response()->json([
                 "message" => $e->getMessage()  
+            ], 500);
+        }
+    }
+
+    public function rejectProperty(Request $request, $id)
+    {
+        try {
+            if (!is_numeric($id) || intval($id) <= 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid property ID provided.'
+                ], 400);
+            }
+            $id = intval($id);
+
+            $checkedId = DB::table("properties")->where("id", "=", $id)->firstOrFail();
+            if (!$checkedId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Property ID not found.'
+                ], 404);
+            }
+
+            DB::table("properties")
+                ->where("id", "=", $checkedId->id)
+                ->update([
+                    "status" => "rejected",
+                    "updated_at" => now()
+                ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Property rejected successfully.'
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => $e->getMessage()
             ], 500);
         }
     }
