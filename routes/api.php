@@ -258,6 +258,7 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
 
     Route::controller(AdminUserController::class)->group(function(){
         Route::get("/admin/users", "getAllUsers");
+        Route::get("/admin/users/{id}", "getUserDetails");
         Route::get("/admin/users/completed", "getCompleteProfile");
         Route::get("/admin/users/incomplete", "getIncompleteProfile");
     });
