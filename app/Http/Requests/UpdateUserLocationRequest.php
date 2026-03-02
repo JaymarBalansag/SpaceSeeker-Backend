@@ -27,8 +27,27 @@ class UpdateUserLocationRequest extends FormRequest
             'state_name'  => 'nullable|string',
             'town_name'   => 'nullable|string',
             'village_name'  => 'nullable|string',
-            'latitude'     => 'nullable|numeric',
-            'longitude'    => 'nullable|numeric',
+            'latitude'     => 'nullable|numeric|between:-90,90',
+            'longitude'    => 'nullable|numeric|between:-180,180',
         ];
+    }
+
+    public function withValidator($validator): void
+    {
+        $validator->after(function ($validator) {
+            $lat = $this->input('latitude');
+            $lng = $this->input('longitude');
+
+            if ($lat === null || $lng === null) {
+                return;
+            }
+
+            $latFloat = (float) $lat;
+            $lngFloat = (float) $lng;
+
+            if (abs($latFloat) < 0.000001 && abs($lngFloat) < 0.000001) {
+                $validator->errors()->add('latitude', 'Latitude and longitude cannot both be zero.');
+            }
+        });
     }
 }

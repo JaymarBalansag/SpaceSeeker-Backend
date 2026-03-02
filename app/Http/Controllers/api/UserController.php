@@ -179,7 +179,18 @@ class UserController extends Controller
                 DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url")
             )
             ->where("users.id", "=", $userid)
-            ->get();
+            ->get()
+            ->map(function ($row) {
+                $lat = isset($row->latitude) ? (float) $row->latitude : null;
+                $lng = isset($row->longitude) ? (float) $row->longitude : null;
+
+                if ($lat !== null && $lng !== null && abs($lat) < 0.000001 && abs($lng) < 0.000001) {
+                    $row->latitude = null;
+                    $row->longitude = null;
+                }
+
+                return $row;
+            });
 
             return response()->json([
                 "message" => "User found",
