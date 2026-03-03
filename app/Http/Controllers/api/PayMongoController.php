@@ -49,6 +49,14 @@ class PayMongoController extends Controller
             return response()->json(['message' => 'You are already an owner'], 403);
         }
 
+        if (strtolower((string) ($user->user_verification_status ?? 'unverified')) !== 'verified') {
+            return response()->json([
+                'message' => 'Verify your account first before applying as owner.',
+                'code' => 'USER_NOT_VERIFIED',
+                'status' => $user->user_verification_status ?? 'unverified',
+            ], 403);
+        }
+
         $request->validate([
             'plan' => 'required|in:Monthly,Annual',
             'paymentType' => "required|string",
