@@ -254,6 +254,7 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
     Route::controller(AdminOwnerController::class)->group(function(){
         Route::get("/admin/owner", "getAllOwner");
         Route::get("/admin/owner/{ownerId}", "getOwnerDetails");
+        Route::post("/admin/owner/{ownerId}/notify", "notifyOwner");
         Route::patch("/admin/owner/{ownerId}/verification", "updateOwnerVerification");
         Route::get("/admin/owner/inactive", "getInactiveOwner");
         Route::get("/admin/owner/active", "getActiveOwner");
