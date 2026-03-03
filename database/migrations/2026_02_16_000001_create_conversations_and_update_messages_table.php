@@ -71,12 +71,43 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('messages', function (Blueprint $table) {
-            $table->dropIndex(['conversation_id', 'created_at']);
-            $table->dropIndex(['sender_id', 'receiver_id', 'created_at']);
-            $table->dropConstrainedForeignId('conversation_id');
-            $table->dropColumn('read_at');
-        });
+        if (Schema::hasColumn('messages', 'conversation_id')) {
+            $fkExists = DB::table('information_schema.KEY_COLUMN_USAGE')
+                ->where('TABLE_SCHEMA', DB::getDatabaseName())
+                ->where('TABLE_NAME', 'messages')
+                ->where('COLUMN_NAME', 'conversation_id')
+                ->whereNotNull('REFERENCED_TABLE_NAME')
+                ->exists();
+
+            if ($fkExists) {
+                // Drop FK first so MySQL allows removing dependent indexes.
+                Schema::table('messages', function (Blueprint $table) {
+                    $table->dropForeign(['conversation_id']);
+                });
+            }
+
+            $conversationCreatedAtIndexExists = DB::table('information_schema.STATISTICS')
+                ->where('TABLE_SCHEMA', DB::getDatabaseName())
+                ->where('TABLE_NAME', 'messages')
+                ->where('INDEX_NAME', 'messages_conversation_id_created_at_index')
+                ->exists();
+
+            if ($conversationCreatedAtIndexExists) {
+                Schema::table('messages', function (Blueprint $table) {
+                    $table->dropIndex('messages_conversation_id_created_at_index');
+                });
+            }
+
+            Schema::table('messages', function (Blueprint $table) {
+                $table->dropColumn('conversation_id');
+            });
+        }
+
+        if (Schema::hasColumn('messages', 'read_at')) {
+            Schema::table('messages', function (Blueprint $table) {
+                $table->dropColumn('read_at');
+            });
+        }
 
         Schema::dropIfExists('conversations');
     }
