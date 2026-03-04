@@ -76,4 +76,70 @@ class NotificationController extends Controller
             'updated' => $updated,
         ], 200);
     }
+
+    public function destroy(Request $request, string $id)
+    {
+        $notification = $request->user()->notifications()->where('id', $id)->first();
+        if (!$notification) {
+            return response()->json([
+                'message' => 'Notification not found.',
+            ], 404);
+        }
+
+        $notification->delete();
+
+        return response()->json([
+            'message' => 'Notification deleted successfully.',
+            'deleted_id' => $id,
+        ], 200);
+    }
+
+    public function destroyMany(Request $request)
+    {
+        $validated = $request->validate([
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'required|string',
+        ]);
+
+        $ids = collect($validated['ids'])
+            ->map(fn ($id) => trim((string) $id))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return response()->json([
+                'message' => 'No valid notification ids were provided.',
+            ], 422);
+        }
+
+        $query = $request->user()->notifications()->whereIn('id', $ids->all());
+        $deletedIds = $query->pluck('id')->values();
+        $deletedCount = $query->delete();
+
+        return response()->json([
+            'message' => 'Selected notifications deleted successfully.',
+            'deleted_count' => $deletedCount,
+            'deleted_ids' => $deletedIds,
+        ], 200);
+    }
+
+    public function destroyAllByTab(Request $request)
+    {
+        $tabType = $this->requestObserver->resolveType($request->input('type'));
+        if (!$tabType) {
+            return response()->json([
+                'message' => 'Invalid notification type. Use system or bookings.',
+            ], 422);
+        }
+
+        $query = $request->user()->notifications()->where('data->tab', $tabType);
+        $deletedCount = $query->delete();
+
+        return response()->json([
+            'message' => 'Notifications deleted successfully.',
+            'type' => $tabType,
+            'deleted_count' => $deletedCount,
+        ], 200);
+    }
 }

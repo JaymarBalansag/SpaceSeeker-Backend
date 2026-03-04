@@ -70,12 +70,6 @@ class BookingController extends Controller
                 return response()->json(["error" => "Move-in date cannot be in the past"], 422);
             }
 
-            $request->validate([
-                'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
-            ]);
-
-            $validIdPath = $request->file('valid_id')->store('bookings/ids', 'public');
-
             $bookingId = DB::table('bookings')->insertGetId([
                 'user_id' => $userId,
                 'property_id' => $propertyId,
@@ -87,7 +81,7 @@ class BookingController extends Controller
                 'room_preference' => $request->room_preference,
                 'notes' => $request->notes,
                 'agreement' => $request->agreement,
-                'valid_id_path' => $validIdPath,
+                'valid_id_path' => null,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

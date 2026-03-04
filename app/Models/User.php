@@ -30,6 +30,12 @@ class User extends Authenticatable implements MustVerifyEmail
         'latitude',
         'longitude',
         'address',
+        'user_verification_status',
+        'user_valid_govt_id_path',
+        'user_verification_submitted_at',
+        'user_verified_at',
+        'user_verification_rejected_reason',
+        'user_verified_by_admin_id',
     ];
 
     /**
@@ -52,6 +58,8 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'user_verification_submitted_at' => 'datetime',
+            'user_verified_at' => 'datetime',
         ];
     }
 }

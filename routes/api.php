@@ -103,7 +103,7 @@ Route::middleware("auth:sanctum")->group(function() {
     });
 
     Route::controller(PayMongoController::class)->group(function () {
-        Route::post('/paymongo/create-payment', 'createPayment');
+        Route::post('/paymongo/create-payment', 'createPayment')->middleware('user_verified');
     });
 
     Route::controller(EmailVerificationController::class)->group(function() {
@@ -137,6 +137,8 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
         Route::post("/profile_completion", "completeProfile");
         Route::post("/update_profile", "updateProfile");
         Route::post("/update-location", "updateLocation");
+        Route::post("/user/verification/submit", "submitUserVerification");
+        Route::get("/user/verification/status", "getUserVerificationStatus");
         Route::get("/UID", "getUserID");
         Route::post("/verify-password", "verifyPassword");
         Route::post("/change-password", "changePassword");
@@ -148,7 +150,7 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
     });
 
     Route::controller(BookingController::class)->group(function() {
-        Route::post('/bookings/submit_booking', 'submitBookingRequest');
+        Route::post('/bookings/submit_booking', 'submitBookingRequest')->middleware('user_verified');
         Route::get('/bookings/my', 'getMyBookings');
     });
 
@@ -169,6 +171,9 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
 
     Route::controller(NotificationController::class)->group(function() {
         Route::get('/notifications', 'index');
+        Route::delete('/notifications/tab', 'destroyAllByTab');
+        Route::delete('/notifications', 'destroyMany');
+        Route::delete('/notifications/{id}', 'destroy');
         Route::post('/notifications/{id}/read', 'markAsRead');
         Route::post('/notifications/read-all', 'markAllAsRead');
     });
@@ -190,7 +195,7 @@ Route::middleware(["auth:sanctum", "is_tenant", "verified"])->group(function () 
 
 });
 
-Route::middleware(["auth:sanctum", "is_owner", "verified"])->group(function() {
+Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->group(function() {
 
     Route::controller(PropertyController::class)->group(function() {
         Route::post('/properties', 'createProperty');
@@ -252,6 +257,7 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
     Route::controller(AdminOwnerController::class)->group(function(){
         Route::get("/admin/owner", "getAllOwner");
         Route::get("/admin/owner/{ownerId}", "getOwnerDetails");
+        Route::post("/admin/owner/{ownerId}/notify", "notifyOwner");
         Route::patch("/admin/owner/{ownerId}/verification", "updateOwnerVerification");
         Route::get("/admin/owner/inactive", "getInactiveOwner");
         Route::get("/admin/owner/active", "getActiveOwner");
@@ -261,6 +267,9 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::get("/admin/users", "getAllUsers");
         Route::get("/admin/users/completed", "getCompleteProfile");
         Route::get("/admin/users/incomplete", "getIncompleteProfile");
+        Route::get("/admin/users/verifications", "getUserVerifications");
+        Route::get("/admin/users/{id}/verification", "getUserVerificationDetails");
+        Route::patch("/admin/users/{id}/verification", "updateUserVerification");
         Route::get("/admin/users/{id}", "getUserDetails");
     });
 

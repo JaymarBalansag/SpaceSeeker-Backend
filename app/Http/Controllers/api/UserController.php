@@ -176,7 +176,8 @@ class UserController extends Controller
                 "users.*",
                 "owners.owner_verification_status",
                 "owners.owner_verified_at",
-                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url")
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"),
+                DB::raw("CASE WHEN users.user_valid_govt_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_valid_govt_id_path) ELSE NULL END as user_valid_govt_id_url")
             )
             ->where("users.id", "=", $userid)
             ->get()
@@ -201,6 +202,97 @@ class UserController extends Controller
         } catch (\Exception $e) {
            return response()->json([
                 'message' => 'Error getting user: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function submitUserVerification(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            if (!$user) {
+                return response()->json([
+                    "message" => "Unauthenticated"
+                ], 401);
+            }
+
+            $isComplete = $user->isComplete === true || $user->isComplete === 1 || $user->isComplete === "1";
+            if (!$isComplete) {
+                return response()->json([
+                    "message" => "Complete your profile before submitting verification."
+                ], 422);
+            }
+
+            $request->validate([
+                'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            ]);
+
+            $oldPath = DB::table("users")
+                ->where("id", $user->id)
+                ->value("user_valid_govt_id_path");
+
+            $path = $request->file("valid_id")->store("users/verifications/ids", "public");
+
+            DB::table("users")
+                ->where("id", $user->id)
+                ->update([
+                    "user_valid_govt_id_path" => $path,
+                    "user_verification_status" => "pending",
+                    "user_verification_submitted_at" => now(),
+                    "user_verified_at" => null,
+                    "user_verification_rejected_reason" => null,
+                    "user_verified_by_admin_id" => null,
+                    "updated_at" => now(),
+                ]);
+
+            if ($oldPath && $oldPath !== $path && Storage::disk("public")->exists($oldPath)) {
+                Storage::disk("public")->delete($oldPath);
+            }
+
+            return response()->json([
+                "message" => "Verification document submitted successfully.",
+                "status" => "pending",
+                "user_valid_govt_id_url" => asset("storage/" . $path),
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Verification submission failed",
+                "error" => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getUserVerificationStatus(Request $request)
+    {
+        try {
+            $user = DB::table("users")
+                ->select(
+                    "id",
+                    "isComplete",
+                    "user_verification_status",
+                    "user_verification_submitted_at",
+                    "user_verified_at",
+                    "user_verification_rejected_reason",
+                    DB::raw("CASE WHEN user_valid_govt_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', user_valid_govt_id_path) ELSE NULL END as user_valid_govt_id_url")
+                )
+                ->where("id", Auth::id())
+                ->first();
+
+            if (!$user) {
+                return response()->json([
+                    "message" => "User not found"
+                ], 404);
+            }
+
+            return response()->json([
+                "message" => "User verification status retrieved successfully",
+                "data" => $user,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Failed to fetch verification status",
+                "error" => $e->getMessage(),
             ], 500);
         }
     }

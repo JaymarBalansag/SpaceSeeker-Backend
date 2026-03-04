@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class PayMongoController extends Controller
 {
@@ -49,12 +48,19 @@ class PayMongoController extends Controller
             return response()->json(['message' => 'You are already an owner'], 403);
         }
 
+        if (strtolower((string) ($user->user_verification_status ?? 'unverified')) !== 'verified') {
+            return response()->json([
+                'message' => 'Verify your account first before applying as owner.',
+                'code' => 'USER_NOT_VERIFIED',
+                'status' => $user->user_verification_status ?? 'unverified',
+            ], 403);
+        }
+
         $request->validate([
             'plan' => 'required|in:Monthly,Annual',
             'paymentType' => "required|string",
             'phone' => 'required|string',
-            'permit' => 'required|file|mimes:jpg,jpeg,png,pdf',
-            'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf',
+            'permit_acknowledged' => 'required|accepted',
         ]);
 
         // 1. Calculate Plan Details
@@ -69,11 +75,6 @@ class PayMongoController extends Controller
         }
 
         $existingOwner = DB::table('owners')->where('user_id', $user->id)->first();
-        $oldPermitPath = $existingOwner->business_permit ?? null;
-        $oldIdPath = $existingOwner->valid_govt_id ?? null;
-
-        $permitPath = $request->file('permit')->store('verifications/permits', 'public');
-        $idPath = $request->file('valid_id')->store('verifications/ids', 'public');
 
         // 2. Insert Pending Subscription into DB
         // We do this first so we have a record even if they don't pay yet
@@ -83,9 +84,9 @@ class PayMongoController extends Controller
             $ownerData = [
                 'paymentType' => $request->paymentType,
                 'phone_number' => $request->phone,
-                'business_permit' => $permitPath,
-                'valid_govt_id' => $idPath,
                 'status' => 'pending', // Not yet an active owner
+                'permit_compliance_acknowledged' => true,
+                'permit_compliance_acknowledged_at' => now(),
                 'owner_verification_status' => ($existingOwner && $existingOwner->owner_verification_status === 'verified')
                     ? 'verified'
                     : 'pending',
@@ -117,18 +118,9 @@ class PayMongoController extends Controller
 
             DB::commit();
 
-            if ($oldPermitPath && $oldPermitPath !== $permitPath) {
-                Storage::disk('public')->delete($oldPermitPath);
-            }
-
-            if ($oldIdPath && $oldIdPath !== $idPath) {
-                Storage::disk('public')->delete($oldIdPath);
-            }
-
         } catch (\Exception $e) {
             //throw $th;
             DB::rollBack();
-            Storage::disk('public')->delete([$permitPath, $idPath]);
             return response()->json(['error' => 'Failed to initiate' . $e], 500);
         } 
 
