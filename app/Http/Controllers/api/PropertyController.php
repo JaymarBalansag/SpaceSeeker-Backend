@@ -308,6 +308,11 @@ class PropertyController extends Controller
                 $thumbnailPath = $request->file('thumbnail')->store('thumbnails', 'public');
             }
 
+            $businessPermitPath = null;
+            if ($request->hasFile('business_permit')) {
+                $businessPermitPath = $request->file('business_permit')->store('property_permits', 'public');
+            }
+
             // Extract images
             $imagePaths = [];
             if ($request->hasFile('images')) {
@@ -335,6 +340,7 @@ class PropertyController extends Controller
             $propertyId = $this->propertyService->create(
                 $validated,
                 $thumbnailPath,
+                $businessPermitPath,
                 $imagePaths,
                 $amenities,
                 $facilities,
@@ -349,6 +355,7 @@ class PropertyController extends Controller
                 'message' => 'Property created successfully!',
                 'property_id' => $propertyId,
                 'thumbnail_url' => $thumbnailPath,
+                'business_permit_url' => $businessPermitPath ? asset('storage/' . $businessPermitPath) : null,
                 'images' => $imagePaths,
             ], 201);
 
@@ -1174,6 +1181,9 @@ class PropertyController extends Controller
             $property->thumbnail_url = $property->thumbnail 
                 ? asset('storage/' . $property->thumbnail) 
                 : null;
+            $property->business_permit_url = $property->business_permit_path
+                ? asset('storage/' . $property->business_permit_path)
+                : null;
 
             // 3. Fetch related data as clean arrays for your Vue checkboxes
             $property->amenities = DB::table("property_amenities")
@@ -1236,6 +1246,20 @@ class PropertyController extends Controller
                 $thumbnailPath = $request->file('thumbnail')->store('thumbnails', 'public');
             }
 
+            $request->validate([
+                'business_permit' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            ]);
+
+            $businessPermitPath = $property->business_permit_path;
+            $businessPermitUploadedAt = $property->business_permit_uploaded_at;
+            if ($request->hasFile('business_permit')) {
+                if ($property->business_permit_path) {
+                    Storage::disk('public')->delete($property->business_permit_path);
+                }
+                $businessPermitPath = $request->file('business_permit')->store('property_permits', 'public');
+                $businessPermitUploadedAt = now();
+            }
+
             // 3. Handle Gallery Images (Only if new ones provided)
             if ($request->hasFile('images')) {
                 $oldImages = DB::table("property_images")->where("property_id", $id)->get();
@@ -1277,6 +1301,8 @@ class PropertyController extends Controller
                 'title' => $request->title ?? $property->title,
                 'description' => $request->description ?? $property->description,
                 'thumbnail' => $thumbnailPath,
+                'business_permit_path' => $businessPermitPath,
+                'business_permit_uploaded_at' => $businessPermitUploadedAt,
 
                 // From Step 2
                 'agreement_type' => $request->agreement_type  ?? $property->agreement_type,
