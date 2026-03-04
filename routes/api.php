@@ -171,6 +171,9 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
 
     Route::controller(NotificationController::class)->group(function() {
         Route::get('/notifications', 'index');
+        Route::delete('/notifications/tab', 'destroyAllByTab');
+        Route::delete('/notifications', 'destroyMany');
+        Route::delete('/notifications/{id}', 'destroy');
         Route::post('/notifications/{id}/read', 'markAsRead');
         Route::post('/notifications/read-all', 'markAllAsRead');
     });
