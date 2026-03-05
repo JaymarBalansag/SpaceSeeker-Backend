@@ -94,6 +94,7 @@ class PropertyController extends Controller
 
             $property = $propertyQuery
                 ->addSelect(DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as thumbnail_url"))
+                ->addSelect(DB::raw("CASE WHEN properties.business_permit_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.business_permit_path) ELSE NULL END as business_permit_url"))
                 ->where("properties.id", "=", $checkedId->id)
                 ->first();
 

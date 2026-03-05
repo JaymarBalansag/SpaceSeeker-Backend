@@ -7,7 +7,18 @@ use Illuminate\Support\Facades\Auth;
 
 class PropertyService
 {
-    public function create(array $validated, $thumbnail = null, $images = [], $amenities = [], $facilities = [], $utilities = [], $custom_utilities, $custom_amenities, $custom_facilities)
+    public function create(
+        array $validated,
+        $thumbnail = null,
+        $businessPermitPath = null,
+        $images = [],
+        $amenities = [],
+        $facilities = [],
+        $utilities = [],
+        $custom_utilities = [],
+        $custom_amenities = [],
+        $custom_facilities = []
+    )
     {
         DB::beginTransaction();
 
@@ -21,6 +32,8 @@ class PropertyService
                 'owner_id' => $ownerid->id,
                 'title' => $validated['title'],
                 'thumbnail' => $thumbnail,
+                'business_permit_path' => $businessPermitPath,
+                'business_permit_uploaded_at' => $businessPermitPath ? now() : null,
                 'description' => $validated['description'] ?? null,
                 'price' => $validated['price'],
                 'utilities_included' => $validated['utilities_included'] ?? false,

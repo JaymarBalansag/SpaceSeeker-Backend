@@ -24,6 +24,7 @@ class PropertyRequest extends FormRequest
         return [
             'title' => 'required|string|max:255',
             'thumbnail' => 'nullable|image',
+            'business_permit' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
             'description' => 'nullable|string',
 
             // Property Prices
