@@ -7,9 +7,15 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use App\Http\Controllers\Controller;
+use App\Services\NotificationService;
 
 class PropertyController extends Controller
 {
+    public function __construct(
+        protected NotificationService $notificationService
+    ) {
+    }
+
     public function showPropertyDetails($id)
     {
         return $this->ShowProperties($id);
@@ -278,11 +284,155 @@ class PropertyController extends Controller
         }
     }
 
+    // Property counts for admin dashboard KPI cards
+    public function getPropertyCounts()
+    {
+        try {
+            $rows = DB::table('properties')
+                ->select('status', DB::raw('COUNT(*) as total'))
+                ->whereIn('status', ['active', 'pending', 'rejected'])
+                ->groupBy('status')
+                ->get();
+
+            $counts = [
+                'active' => 0,
+                'pending' => 0,
+                'rejected' => 0,
+            ];
+
+            foreach ($rows as $row) {
+                $status = (string) ($row->status ?? '');
+                if (array_key_exists($status, $counts)) {
+                    $counts[$status] = (int) ($row->total ?? 0);
+                }
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $counts,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to fetch property counts.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function notifyPropertyOwner(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'message' => 'required|string|max:1000',
+        ]);
+
+        try {
+            if (!is_numeric($id) || intval($id) <= 0) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid property ID provided.'
+                ], 400);
+            }
+
+            $propertyId = intval($id);
+
+            $property = DB::table('properties')
+                ->join('owners', 'properties.owner_id', '=', 'owners.id')
+                ->join('users', 'owners.user_id', '=', 'users.id')
+                ->select(
+                    'properties.id',
+                    'properties.title',
+                    'properties.status',
+                    'owners.id as owner_id',
+                    'owners.user_id',
+                    'users.first_name',
+                    'users.last_name'
+                )
+                ->where('properties.id', $propertyId)
+                ->first();
+
+            if (!$property) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Property not found.'
+                ], 404);
+            }
+
+            $admin = $request->user();
+            $adminName = trim(($admin->first_name ?? '') . ' ' . ($admin->last_name ?? ''));
+            $actor = $adminName !== '' ? $adminName : 'Admin';
+
+            $payload = [
+                'event_type' => 'property_verification_feedback',
+                'tab' => 'system',
+                'title' => 'Admin review update for your property listing',
+                'message' => trim((string) $validated['message']),
+                'property_id' => (int) $property->id,
+                'property_title' => (string) ($property->title ?? ''),
+                'property_status' => (string) ($property->status ?? 'pending'),
+                'reviewed_by' => $actor,
+            ];
+
+            $this->notificationService->createForUser((int) $property->user_id, $payload);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Notification sent to property owner successfully.',
+                'data' => [
+                    'property_id' => (int) $property->id,
+                    'owner_id' => (int) $property->owner_id,
+                ],
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Server Error',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    private function resolvePropertyOwnerForNotification(int $propertyId): ?object
+    {
+        return DB::table('properties')
+            ->join('owners', 'properties.owner_id', '=', 'owners.id')
+            ->join('users', 'owners.user_id', '=', 'users.id')
+            ->select(
+                'properties.id as property_id',
+                'properties.title as property_title',
+                'properties.status as property_status',
+                'owners.id as owner_id',
+                'owners.user_id'
+            )
+            ->where('properties.id', $propertyId)
+            ->first();
+    }
+
+    private function buildReviewStatusPayload(object $ctx, string $status, ?string $reason, string $reviewedBy): array
+    {
+        $isRejected = $status === 'rejected';
+        $message = $isRejected
+            ? 'Your property "' . ($ctx->property_title ?? 'listing') . '" was rejected. Reason: ' . trim((string) $reason)
+            : 'Your property "' . ($ctx->property_title ?? 'listing') . '" has been approved and is now active.';
+
+        return [
+            'event_type' => 'property_review_status_update',
+            'tab' => 'system',
+            'title' => 'Property review update',
+            'message' => $message,
+            'property_id' => (int) ($ctx->property_id ?? 0),
+            'property_title' => (string) ($ctx->property_title ?? ''),
+            'review_status' => $isRejected ? 'rejected' : 'approved',
+            'reason' => $isRejected ? trim((string) $reason) : null,
+            'reviewed_by' => $reviewedBy,
+        ];
+    }
+
 
     // Actions for admins
 
     // Approve Property
-    public function approveProperty($id){
+    public function approveProperty(Request $request, $id){
         try {
             // Validate that the ID is a positive integer
             if (!is_numeric($id) || intval($id) <= 0) {
@@ -310,6 +460,27 @@ class PropertyController extends Controller
                 "updated_at" => now()
             ]);
 
+            $admin = $request->user();
+            $adminName = trim(($admin->first_name ?? '') . ' ' . ($admin->last_name ?? ''));
+            $reviewedBy = $adminName !== '' ? $adminName : 'Admin';
+
+            try {
+                $ctx = $this->resolvePropertyOwnerForNotification((int) $checkedId->id);
+                if ($ctx && !empty($ctx->user_id)) {
+                    $payload = $this->buildReviewStatusPayload($ctx, 'approved', null, $reviewedBy);
+                    $this->notificationService->createForUser((int) $ctx->user_id, $payload);
+                } else {
+                    Log::warning('Property approved but owner notification skipped (owner/user missing)', [
+                        'property_id' => (int) $checkedId->id,
+                    ]);
+                }
+            } catch (\Exception $notifyEx) {
+                Log::error('Failed sending property approval notification', [
+                    'property_id' => (int) $checkedId->id,
+                    'error' => $notifyEx->getMessage(),
+                ]);
+            }
+
             return response()->json([
                 'status' => 'success',
                 'message' => 'Property approved successfully.'
@@ -326,6 +497,10 @@ class PropertyController extends Controller
     public function rejectProperty(Request $request, $id)
     {
         try {
+            $validated = $request->validate([
+                'reason' => 'required|string|max:1000',
+            ]);
+
             if (!is_numeric($id) || intval($id) <= 0) {
                 return response()->json([
                     'status' => 'error',
@@ -348,6 +523,27 @@ class PropertyController extends Controller
                     "status" => "rejected",
                     "updated_at" => now()
                 ]);
+
+            $admin = $request->user();
+            $adminName = trim(($admin->first_name ?? '') . ' ' . ($admin->last_name ?? ''));
+            $reviewedBy = $adminName !== '' ? $adminName : 'Admin';
+
+            try {
+                $ctx = $this->resolvePropertyOwnerForNotification((int) $checkedId->id);
+                if ($ctx && !empty($ctx->user_id)) {
+                    $payload = $this->buildReviewStatusPayload($ctx, 'rejected', (string) $validated['reason'], $reviewedBy);
+                    $this->notificationService->createForUser((int) $ctx->user_id, $payload);
+                } else {
+                    Log::warning('Property rejected but owner notification skipped (owner/user missing)', [
+                        'property_id' => (int) $checkedId->id,
+                    ]);
+                }
+            } catch (\Exception $notifyEx) {
+                Log::error('Failed sending property rejection notification', [
+                    'property_id' => (int) $checkedId->id,
+                    'error' => $notifyEx->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'status' => 'success',

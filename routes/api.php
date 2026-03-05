@@ -244,12 +244,14 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
     });
 
     Route::controller(AdminPropertyController::class)->group(function() {
+        Route::get("/admin/properties/counts", "getPropertyCounts");
         Route::get("/admin/properties/active", "getActiveProperties");
         Route::get("/admin/properties/pending", "getPendingProperties");
         Route::get("/admin/properties/rejected", "getRejectedProperties");
         Route::get('/admin/properties/{id}', 'showPropertyDetails');
         
         // Actions
+        Route::post('/admin/properties/{id}/notify', 'notifyPropertyOwner');
         Route::put('/admin/properties/{id}/approve', 'approveProperty');
         Route::put('/admin/properties/{id}/reject', 'rejectProperty');
     });
