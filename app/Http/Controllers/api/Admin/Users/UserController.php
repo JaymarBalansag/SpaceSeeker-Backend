@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Admin\Users;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
+use App\Services\NotificationService;
+use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
@@ -289,6 +291,34 @@ class UserController extends Controller
             DB::table("users")
                 ->where("id", $id)
                 ->update($update);
+
+            $reviewStatus = $validated["status"] === "verified" ? "approved" : "rejected";
+            $reviewedBy = "Admin";
+            if (auth()->user()) {
+                $reviewedBy = trim((string) (auth()->user()->first_name . " " . auth()->user()->last_name)) ?: "Admin";
+            }
+
+            $payload = [
+                "event_type" => "user_verification_status_update",
+                "tab" => "system",
+                "title" => "Identity verification update",
+                "message" => $reviewStatus === "approved"
+                    ? "Your identity verification has been approved."
+                    : "Your identity verification was rejected. Reason: " . trim((string) $validated["reason"]),
+                "review_status" => $reviewStatus,
+                "reason" => $reviewStatus === "rejected" ? trim((string) $validated["reason"]) : null,
+                "reviewed_by" => $reviewedBy,
+            ];
+
+            try {
+                app(NotificationService::class)->createForUser((int) $user->id, $payload);
+            } catch (\Exception $notifyException) {
+                Log::warning("Failed to send user verification notification", [
+                    "user_id" => $user->id,
+                    "status" => $reviewStatus,
+                    "error" => $notifyException->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 "message" => "User verification status updated successfully"
