@@ -143,10 +143,12 @@ class BookingController extends Controller
                     "users.first_name",
                     "users.last_name",
                     "users.email",
+                    "users.phone_number",
                     "properties.id as property_id",
                     "properties.title",
                     "property_types.type_name",
-                    DB::raw("CASE WHEN bookings.valid_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', bookings.valid_id_path) ELSE NULL END as valid_id_url")
+                    DB::raw("CASE WHEN bookings.valid_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', bookings.valid_id_path) ELSE NULL END as valid_id_url"),
+                    DB::raw("CASE WHEN users.user_valid_govt_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_valid_govt_id_path) ELSE NULL END as user_valid_govt_id_url")
                 )
                 ->where("properties.owner_id", $owner->id)
                 ->where("bookings.status", $status)
