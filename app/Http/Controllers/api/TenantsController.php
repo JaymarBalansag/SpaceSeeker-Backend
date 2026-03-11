@@ -249,6 +249,8 @@ class TenantsController extends Controller
                 "tenants.status as tenant_status",
                 "tenants.move_in_date",
                 "properties.title as property_title",
+                "properties.deposit_required",
+                "properties.advance_payment_months",
                 "properties.village_name",
                 "properties.town_name",
                 "properties.state_name",
@@ -297,6 +299,8 @@ class TenantsController extends Controller
                 'property_title' => $tenant->property_title,
                 'property_type' => $tenant->property_type,
                 'property_address' => $propertyAddress,
+                'deposit_required' => $tenant->deposit_required,
+                'advance_payment_months' => $tenant->advance_payment_months,
                 'billings' => $billings,
             ]
         ], 200);
