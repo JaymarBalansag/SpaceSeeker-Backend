@@ -237,6 +237,71 @@ class TenantsController extends Controller
         return response()->json(['data' => $billings]);
     }
 
+    public function getTenantDashboard(Request $request)
+    {
+        $userId = Auth::id();
+
+        $tenant = DB::table("tenants")
+            ->join("properties", "tenants.property_id", "=", "properties.id")
+            ->leftJoin("property_types", "properties.property_type_id", "=", "property_types.id")
+            ->select(
+                "tenants.id as tenant_id",
+                "tenants.status as tenant_status",
+                "tenants.move_in_date",
+                "properties.title as property_title",
+                "properties.village_name",
+                "properties.town_name",
+                "properties.state_name",
+                "properties.region_name",
+                "property_types.type_name as property_type"
+            )
+            ->where("tenants.user_id", $userId)
+            ->first();
+
+        if (!$tenant) {
+            return response()->json([
+                'data' => [],
+                'message' => 'No tenant profile found for this user.'
+            ], 404);
+        }
+
+        $addressParts = array_filter([
+            $tenant->village_name,
+            $tenant->town_name,
+            $tenant->state_name,
+            $tenant->region_name
+        ], function ($part) {
+            return is_string($part) && trim($part) !== '';
+        });
+
+        $propertyAddress = count($addressParts) ? implode(', ', $addressParts) : null;
+
+        $billings = DB::table('billings')
+            ->join('properties', 'billings.property_id', '=', 'properties.id')
+            ->where('billings.tenant_id', $tenant->tenant_id)
+            ->select(
+                'billings.id',
+                'billings.rent_amount',
+                'billings.rent_due',
+                'billings.rent_status',
+                'billings.rent_cycle',
+                'properties.title as property_title'
+            )
+            ->orderBy('billings.rent_due', 'desc')
+            ->get();
+
+        return response()->json([
+            'data' => [
+                'tenant_status' => $tenant->tenant_status,
+                'move_in_date' => $tenant->move_in_date,
+                'property_title' => $tenant->property_title,
+                'property_type' => $tenant->property_type,
+                'property_address' => $propertyAddress,
+                'billings' => $billings,
+            ]
+        ], 200);
+    }
+
     public function submitPayment(Request $request) {
         $validated = $request->validate([
             'billing_id' => 'required|integer',

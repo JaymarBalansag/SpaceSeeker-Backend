@@ -189,6 +189,7 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
 Route::middleware(["auth:sanctum", "is_tenant", "verified"])->group(function () {
 
     Route::controller(TenantsController::class)->group(function() {
+        Route::get("/tenant/dashboard", "getTenantDashboard");
         Route::get("/my-billings", "getMyBillings");
         Route::post("/submit-payment-records", "submitPayment");
     });
