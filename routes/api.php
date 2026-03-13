@@ -192,6 +192,7 @@ Route::middleware(["auth:sanctum", "is_tenant", "verified"])->group(function () 
         Route::get("/tenant/dashboard", "getTenantDashboard");
         Route::get("/my-billings", "getMyBillings");
         Route::post("/submit-payment-records", "submitPayment");
+        Route::post("/tenant/mock-payments", "mockPayments");
     });
 
 });
@@ -213,6 +214,10 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
         Route::get("/owner/dashboard-summary", "getOwnerDashboardSummary");
         Route::post("/owner/payments/{paymentId}/verify", "verifyPayment");
         Route::post("/owner/payments/{paymentId}/reject", "rejectPayment");
+        Route::get("/owner/ledger/tenants", "getLedgerTenants");
+        Route::get("/owner/ledger/dues", "getLedgerDues");
+        Route::get("/owner/ledger/payments", "getLedgerPayments");
+        Route::post("/owner/ledger/payments", "createLedgerPayment");
     });
 
     Route::controller(SubscriptionController::class)->group(function() {
