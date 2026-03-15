@@ -193,6 +193,8 @@ Route::middleware(["auth:sanctum", "is_tenant", "verified"])->group(function () 
         Route::get("/my-billings", "getMyBillings");
         Route::post("/submit-payment-records", "submitPayment");
         Route::post("/tenant/mock-payments", "mockPayments");
+        Route::post("/tenant/move-out-notices", "submitMoveOutNotice");
+        Route::get("/tenant/move-out-notices", "listMoveOutNotices");
     });
 
 });
@@ -244,6 +246,7 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
         Route::get('/owner/reports/tenant-summary', 'tenantSummary');
         Route::get('/owner/reports/booking-logs', 'bookingLogs');
         Route::get('/owner/reports/payment-analytics', 'paymentAnalytics');
+        Route::get('/owner/move-out-notices', 'listOwnerMoveOutNotices');
     });
 });
 
@@ -291,4 +294,5 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
 });
+
 

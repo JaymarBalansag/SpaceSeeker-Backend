@@ -610,4 +610,58 @@ class TenantsController extends Controller
             ], 201);
         });
     }
+
+    public function submitMoveOutNotice(Request $request)
+    {
+        $validated = $request->validate([
+            'requested_move_out_date' => 'nullable|date',
+            'message' => 'nullable|string|max:1000',
+        ]);
+
+        $tenant = DB::table('tenants')
+            ->join('properties', 'tenants.property_id', '=', 'properties.id')
+            ->select('tenants.id', 'tenants.property_id', 'properties.owner_id')
+            ->where('tenants.user_id', Auth::id())
+            ->first();
+        if (!$tenant) {
+            return response()->json(['message' => 'Tenant profile not found.'], 404);
+        }
+
+        if (!$tenant->owner_id || !$tenant->property_id) {
+            return response()->json(['message' => 'Tenant is not linked to an owner or property.'], 422);
+        }
+
+        $noticeId = DB::table('move_out_notices')->insertGetId([
+            'tenant_id' => $tenant->id,
+            'owner_id' => $tenant->owner_id,
+            'property_id' => $tenant->property_id,
+            'requested_move_out_date' => $validated['requested_move_out_date'] ?? null,
+            'message' => $validated['message'] ?? null,
+            'status' => 'pending',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Move-out notice submitted successfully.',
+            'notice_id' => $noticeId,
+        ], 201);
+    }
+
+    public function listMoveOutNotices()
+    {
+        $tenantId = DB::table('tenants')->where('user_id', Auth::id())->value('id');
+        if (!$tenantId) {
+            return response()->json(['message' => 'Tenant profile not found.'], 404);
+        }
+
+        $notices = DB::table('move_out_notices')
+            ->where('tenant_id', $tenantId)
+            ->orderByDesc('created_at')
+            ->get();
+
+        return response()->json([
+            'data' => $notices,
+        ], 200);
+    }
 }

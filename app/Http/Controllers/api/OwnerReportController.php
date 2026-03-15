@@ -189,4 +189,50 @@ class OwnerReportController extends Controller
             ], 500);
         }
     }
+
+    public function listOwnerMoveOutNotices(Request $request)
+    {
+        $ownerId = DB::table('owners')->where('user_id', Auth::id())->value('id');
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner profile not found.'], 404);
+        }
+
+        $perPage = (int) $request->query('per_page', 5);
+        $page = (int) $request->query('page', 1);
+        $perPage = $perPage > 0 ? $perPage : 5;
+        $page = $page > 0 ? $page : 1;
+        $offset = ($page - 1) * $perPage;
+
+        $baseQuery = DB::table('move_out_notices')
+            ->join('tenants', 'tenants.id', '=', 'move_out_notices.tenant_id')
+            ->join('users', 'users.id', '=', 'tenants.user_id')
+            ->join('properties', 'properties.id', '=', 'move_out_notices.property_id')
+            ->where('move_out_notices.owner_id', $ownerId)
+            ->orderByDesc('move_out_notices.created_at');
+
+        $total = (clone $baseQuery)->count();
+        $lastPage = (int) ceil($total / $perPage);
+        $notices = $baseQuery
+            ->select(
+                'move_out_notices.id',
+                'move_out_notices.status',
+                'move_out_notices.message',
+                'move_out_notices.requested_move_out_date',
+                'move_out_notices.created_at',
+                'users.first_name',
+                'users.last_name',
+                'users.email as tenant_email',
+                'properties.title as property_title'
+            )
+            ->offset($offset)
+            ->limit($perPage)
+            ->get();
+
+        return response()->json([
+            'data' => $notices,
+            'current_page' => $page,
+            'last_page' => $lastPage,
+            'total' => $total,
+        ], 200);
+    }
 }
