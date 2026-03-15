@@ -245,6 +245,193 @@ class PayMongoController extends Controller
         ]);
     }
 
+    public function createListingAddonIntent(Request $request)
+    {
+        $request->validate([
+            'qty' => 'required|integer|min:1|max:10',
+        ]);
+
+        $user = Auth::user();
+        $owner = DB::table('owners')->where('user_id', $user->id)->first();
+        if (!$owner) {
+            return response()->json(['message' => 'Owner profile not found'], 404);
+        }
+
+        $activeSubscription = DB::table('subscriptions')
+            ->where('owner_id', $owner->id)
+            ->where('status', 'active')
+            ->whereDate('end_date', '>=', now()->toDateString())
+            ->orderByDesc('end_date')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$activeSubscription) {
+            return response()->json(['message' => 'No active subscription found'], 403);
+        }
+
+        $billingCycle = $activeSubscription->billing_cycle;
+        $unitPrice = $billingCycle === 'annual' ? 450 : 50;
+        $qty = (int) $request->qty;
+        $totalAmount = $qty * $unitPrice;
+
+        DB::beginTransaction();
+        try {
+            $addonId = DB::table('listing_limit_addons')->insertGetId([
+                'owner_id' => $owner->id,
+                'subscription_id' => $activeSubscription->id,
+                'qty' => $qty,
+                'unit_price' => $unitPrice,
+                'total_amount' => $totalAmount,
+                'billing_cycle' => $billingCycle,
+                'payment_provider' => 'paymongo',
+                'payment_method' => 'qrph',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $intentResponse = $this->payMongoHttp()
+                ->post('https://api.paymongo.com/v1/payment_intents', [
+                    'data' => [
+                        'attributes' => [
+                            'amount' => $totalAmount * 100,
+                            'payment_method_allowed' => ['qrph'],
+                            'currency' => 'PHP',
+                            'description' => $addonId,
+                        ]
+                    ]
+                ]);
+
+            if (!$intentResponse->successful()) {
+                DB::table('listing_limit_addons')->where('id', $addonId)->update([
+                    'status' => 'failed',
+                    'updated_at' => now(),
+                ]);
+                DB::rollBack();
+                return response()->json([
+                    'error' => 'Failed to create payment intent',
+                    'details' => $intentResponse->json(),
+                ], 502);
+            }
+
+            $intent = $intentResponse->json();
+            $intentId = $intent['data']['id'] ?? null;
+            if (!$intentId) {
+                DB::table('listing_limit_addons')->where('id', $addonId)->update([
+                    'status' => 'failed',
+                    'updated_at' => now(),
+                ]);
+                DB::rollBack();
+                return response()->json(['error' => 'Payment intent id missing'], 502);
+            }
+
+            DB::table('listing_limit_addons')->where('id', $addonId)->update([
+                'payment_intent_id' => $intentId,
+                'updated_at' => now(),
+            ]);
+
+            $methodResponse = $this->payMongoHttp()
+                ->post('https://api.paymongo.com/v1/payment_methods', [
+                    'data' => [
+                        'attributes' => [
+                            'type' => 'qrph',
+                            'billing' => [
+                                'name' => $user->first_name . " " . $user->last_name,
+                                'email' => $user->email
+                            ]
+                        ]
+                    ]
+                ]);
+
+            if (!$methodResponse->successful()) {
+                DB::table('listing_limit_addons')->where('id', $addonId)->update([
+                    'status' => 'failed',
+                    'updated_at' => now(),
+                ]);
+                DB::rollBack();
+                return response()->json([
+                    'error' => 'Failed to create payment method',
+                    'details' => $methodResponse->json(),
+                ], 502);
+            }
+
+            $method = $methodResponse->json();
+            $paymentMethodId = $method['data']['id'] ?? null;
+            if (!$paymentMethodId) {
+                DB::table('listing_limit_addons')->where('id', $addonId)->update([
+                    'status' => 'failed',
+                    'updated_at' => now(),
+                ]);
+                DB::rollBack();
+                return response()->json(['error' => 'Payment method id missing'], 502);
+            }
+
+            $attachResponse = $this->payMongoHttp()
+                ->post("https://api.paymongo.com/v1/payment_intents/{$intentId}/attach", [
+                    'data' => [
+                        'attributes' => [
+                            'payment_method' => $paymentMethodId,
+                            'return_url' => url('/payment/success')
+                        ]
+                    ]
+                ]);
+
+            if (!$attachResponse->successful()) {
+                DB::table('listing_limit_addons')->where('id', $addonId)->update([
+                    'status' => 'failed',
+                    'updated_at' => now(),
+                ]);
+                DB::rollBack();
+                return response()->json([
+                    'error' => 'Failed to attach payment method',
+                    'details' => $attachResponse->json(),
+                ], 502);
+            }
+
+            $attach = $attachResponse->json();
+            $qrCode = $attach['data']['attributes']['next_action']['code']['image_url'] ?? null;
+            if (!$qrCode) {
+                $qrCode = $attach['data']['attributes']['next_action']['render_qr_code'] ?? null;
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'qr_code' => $qrCode,
+                'addon_id' => $addonId,
+                'payment_intent_id' => $intentId,
+                'full_response' => $attach,
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Failed to create listing add-on intent',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function getListingAddonStatus(int $addonId)
+    {
+        $ownerId = DB::table('owners')->where('user_id', Auth::id())->value('id');
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner not found'], 404);
+        }
+
+        $addon = DB::table('listing_limit_addons')
+            ->where('id', $addonId)
+            ->where('owner_id', $ownerId)
+            ->first();
+
+        if (!$addon) {
+            return response()->json(['message' => 'Add-on not found'], 404);
+        }
+
+        return response()->json([
+            'status' => $addon->status,
+        ], 200);
+    }
+
     public function handleWebhook(Request $request) {
         // 1. Initial Logging
         Log::info('PayMongo Webhook Received:', $request->all());
@@ -292,6 +479,17 @@ class PayMongoController extends Controller
             }
 
             $sub = $subQuery->first();
+            $addon = null;
+
+            if (!$sub) {
+                $addonQuery = DB::table('listing_limit_addons');
+                if ($paymentIntentId) {
+                    $addonQuery->where('payment_intent_id', $paymentIntentId);
+                } elseif ($targetSubId) {
+                    $addonQuery->where('id', $targetSubId);
+                }
+                $addon = $addonQuery->first();
+            }
 
             if ($sub) {
                 DB::beginTransaction();
@@ -361,6 +559,39 @@ class PayMongoController extends Controller
                     Log::error('Webhook DB Error: ' . $e->getMessage());
                     return response()->json(['error' => 'Processing failed'], 500);
                 }
+            } elseif ($addon) {
+                DB::beginTransaction();
+                try {
+                    if ($addon->status === 'active') {
+                        DB::commit();
+                        return response()->json(['message' => 'Already processed'], 200);
+                    }
+
+                    if ($addon->status !== 'pending') {
+                        DB::commit();
+                        return response()->json(['message' => 'No pending add-on to activate'], 200);
+                    }
+
+                    DB::table('listing_limit_addons')->where('id', $addon->id)->update([
+                        'status' => 'active',
+                        'applied_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    DB::table('subscriptions')
+                        ->where('id', $addon->subscription_id)
+                        ->update([
+                            'listing_limit' => DB::raw('listing_limit + ' . (int) $addon->qty),
+                            'updated_at' => now(),
+                        ]);
+
+                    DB::commit();
+                    Log::info("Listing add-on applied for Addon #{$addon->id}");
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    Log::error('Webhook Add-on DB Error: ' . $e->getMessage());
+                    return response()->json(['error' => 'Processing failed'], 500);
+                }
             } else {
                 Log::warning('payment.paid received but no matching subscription found', [
                     'payment_intent_id' => $paymentIntentId,
@@ -384,6 +615,18 @@ class PayMongoController extends Controller
                     'status' => 'failed',
                     'updated_at' => now()
                 ]);
+
+                $addonQuery = DB::table('listing_limit_addons');
+                if ($paymentIntentId) {
+                    $addonQuery->where('payment_intent_id', $paymentIntentId);
+                } else {
+                    $addonQuery->where('id', $targetSubId);
+                }
+
+                $addonQuery->update([
+                    'status' => 'failed',
+                    'updated_at' => now(),
+                ]);
             }
         }
 
@@ -402,6 +645,18 @@ class PayMongoController extends Controller
                         'status' => 'expired',
                         'updated_at' => now()
                 ]);
+
+                $addonQuery = DB::table('listing_limit_addons')->where('status', 'pending');
+                if ($paymentIntentId) {
+                    $addonQuery->where('payment_intent_id', $paymentIntentId);
+                } else {
+                    $addonQuery->where('id', $targetSubId);
+                }
+
+                $addonQuery->update([
+                    'status' => 'expired',
+                    'updated_at' => now(),
+                ]);
             }
         }
 
@@ -409,3 +664,4 @@ class PayMongoController extends Controller
         return response()->json(['message' => 'Processed'], 200);
     }
 }
+

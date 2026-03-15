@@ -223,6 +223,10 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
     Route::controller(SubscriptionController::class)->group(function() {
         Route::get("/listing-limit", "getPropertyLimit");
     });
+    Route::controller(PayMongoController::class)->group(function() {
+        Route::post('/owner/listing-addon/intent', 'createListingAddonIntent');
+        Route::get('/owner/listing-addon/status/{addonId}', 'getListingAddonStatus');
+    });
 
     Route::controller(BookingController::class)->group(function(){
         Route::get("/bookings/pending", "getPendingUserBookings");
@@ -287,3 +291,4 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
 });
+
