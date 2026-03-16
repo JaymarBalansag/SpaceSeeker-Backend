@@ -66,6 +66,13 @@ class TenantsController extends Controller
                 "users.first_name",
                 "users.last_name",
                 "users.email as tenant_email",
+                "users.phone_number",
+                "users.streets",
+                "users.village_name",
+                "users.town_name",
+                "users.state_name",
+                "users.region_name",
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"),
                 "properties.title as property_title",
                 "property_types.type_name as property_type_name"
             )
@@ -117,6 +124,13 @@ class TenantsController extends Controller
                 "users.first_name",
                 "users.last_name",
                 "users.email as tenant_email",
+                "users.phone_number",
+                "users.streets",
+                "users.village_name",
+                "users.town_name",
+                "users.state_name",
+                "users.region_name",
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"),
                 "properties.title as property_title",
                 "property_types.type_name as property_type_name"
             )
@@ -181,7 +195,8 @@ class TenantsController extends Controller
                     ->where('id', $id)
                     ->update([
                         'status' => 'active',
-                        'updated_at' => now(),
+                        'ended_at' => null,
+                'updated_at' => now(),
                     ]);
 
                 DB::table('billings')
@@ -189,7 +204,7 @@ class TenantsController extends Controller
                     ->where('rent_status', 'pending')
                     ->update([
                         'rent_status' => 'unpaid',
-                        'updated_at' => now()
+                'updated_at' => now()
                     ]);
 
                 return response()->json([
@@ -235,6 +250,353 @@ class TenantsController extends Controller
             ->get();
 
         return response()->json(['data' => $billings]);
+    }
+
+    
+    public function getTenantBillingsById(Request $request, int $tenantId)
+    {
+        $userId = Auth::id();
+
+        $ownsTenant = DB::table("tenants")
+            ->where("id", $tenantId)
+            ->where("user_id", $userId)
+            ->exists();
+
+        if (!$ownsTenant) {
+            return response()->json([
+                'data' => [],
+                'message' => 'Tenant record not found for this user.'
+            ], 404);
+        }
+
+        $billings = DB::table('billings')
+            ->join('properties', 'billings.property_id', '=', 'properties.id')
+            ->where('billings.tenant_id', $tenantId)
+            ->select(
+                'billings.id',
+                'billings.rent_amount',
+                'billings.rent_due',
+                'billings.rent_status',
+                'billings.rent_cycle',
+                'billings.deposit_paid_amount',
+                'billings.advance_paid_amount',
+                'properties.title as property_title'
+            )
+            ->orderBy('billings.rent_due', 'desc')
+            ->get();
+
+        return response()->json([
+            'data' => $billings
+        ], 200);
+    }
+
+public function getTenantDashboard(Request $request)
+    {
+        $userId = Auth::id();
+
+        $tenant = DB::table("tenants")
+            ->join("properties", "tenants.property_id", "=", "properties.id")
+            ->leftJoin("property_types", "properties.property_type_id", "=", "property_types.id")
+            ->select(
+                "tenants.id as tenant_id",
+                "tenants.status as tenant_status",
+                "tenants.move_in_date",
+                "tenants.property_id",
+                "properties.title as property_title",
+                "properties.deposit_required",
+                "properties.advance_payment_months",
+                "properties.village_name",
+                "properties.town_name",
+                "properties.state_name",
+                "properties.region_name",
+                "property_types.type_name as property_type"
+            )
+            ->where("tenants.user_id", $userId)
+            ->orderByDesc("tenants.created_at")
+            ->first();
+
+        if (!$tenant) {
+            return response()->json([
+                'data' => [],
+                'message' => 'No tenant profile found for this user.'
+            ], 404);
+        }
+
+        $tenancyHistory = DB::table("tenants")
+            ->join("properties", "tenants.property_id", "=", "properties.id")
+            ->leftJoin("property_types", "properties.property_type_id", "=", "property_types.id")
+            ->select(
+                "tenants.id",
+                "tenants.status",
+                "tenants.move_in_date",
+                "tenants.ended_at",
+                "tenants.created_at",
+                "properties.title as property_title",
+                "property_types.type_name as property_type"
+            )
+            ->where("tenants.user_id", $userId)
+            ->orderByDesc("tenants.created_at")
+            ->get();
+
+        $addressParts = array_filter([
+            $tenant->village_name,
+            $tenant->town_name,
+            $tenant->state_name,
+            $tenant->region_name
+        ], function ($part) {
+            return is_string($part) && trim($part) !== '';
+        });
+
+        $propertyAddress = count($addressParts) ? implode(', ', $addressParts) : null;
+
+        $billings = DB::table('billings')
+            ->join('properties', 'billings.property_id', '=', 'properties.id')
+            ->where('billings.tenant_id', $tenant->tenant_id)
+            ->select(
+                'billings.id',
+                'billings.rent_amount',
+                'billings.rent_due',
+                'billings.rent_status',
+                'billings.rent_cycle',
+                'billings.deposit_paid_amount',
+                'billings.advance_paid_amount',
+                'billings.property_id',
+                'properties.title as property_title'
+            )
+            ->orderBy('billings.rent_due', 'desc')
+            ->get();
+
+        $dueItems = [];
+        $billingsById = $billings->keyBy('id');
+
+        foreach ($billings as $bill) {
+            if (!in_array($bill->rent_status, ['unpaid', 'overdue', 'pending'], true)) {
+                continue;
+            }
+
+            $verifiedRentPaid = (float) DB::table('payments')
+                ->where('billing_id', $bill->id)
+                ->where('status', 'verified')
+                ->where(function ($q) {
+                    $q->whereNull('remarks')
+                      ->orWhere('remarks', 'like', 'payment_type:rent%');
+                })
+                ->sum('amount_paid');
+
+            $remaining = round(((float) $bill->rent_amount) - $verifiedRentPaid, 2);
+            if ($remaining <= 0) {
+                continue;
+            }
+
+            $dueItems[] = [
+                'id' => 'rent_' . $bill->id,
+                'type' => 'billing',
+                'label' => $bill->rent_cycle . ' Rent',
+                'amount' => (float) $bill->rent_amount,
+                'amount_due' => $remaining,
+                'billing_id' => $bill->id,
+                'property_id' => $bill->property_id,
+                'due' => $bill->rent_due,
+                'rent_status' => $bill->rent_status,
+                'billing' => $bill,
+            ];
+        }
+
+        $latestBilling = $billings->count() ? $billings->first() : null;
+
+        $depositRequired = (float) $tenant->deposit_required;
+        $advanceAmount = (float) $tenant->advance_payment_months;
+
+        if ($depositRequired > 0 && $latestBilling) {
+            $depositPaid = (float) ($latestBilling->deposit_paid_amount ?? 0);
+            $depositRemaining = round($depositRequired - $depositPaid, 2);
+            if ($depositRemaining > 0) {
+                $dueItems[] = [
+                    'id' => 'deposit_' . $tenant->tenant_id,
+                    'type' => 'deposit',
+                    'label' => 'Security Deposit',
+                    'amount' => $depositRequired,
+                    'amount_due' => $depositRemaining,
+                    'billing_id' => $latestBilling->id,
+                    'property_id' => $tenant->property_id,
+                    'due' => 'Upon move-in',
+                    'rent_status' => 'unpaid',
+                ];
+            }
+        }
+
+        if ($advanceAmount > 0 && $latestBilling) {
+            $advanceRequired = round($advanceAmount, 2);
+            $advancePaid = (float) ($latestBilling->advance_paid_amount ?? 0);
+            $advanceRemaining = round($advanceRequired - $advancePaid, 2);
+            if ($advanceRemaining > 0) {
+                $dueItems[] = [
+                    'id' => 'advance_' . $tenant->tenant_id,
+                    'type' => 'advance',
+                    'label' => 'Advance Payment (Move-out Notice)',
+                    'amount' => $advanceRequired,
+                    'amount_due' => $advanceRemaining,
+                    'billing_id' => $latestBilling->id,
+                    'property_id' => $tenant->property_id,
+                    'due' => 'Upon move-in',
+                    'rent_status' => 'unpaid',
+                ];
+            }
+        }
+
+        return response()->json([
+            'data' => [
+                'tenant_id' => $tenant->tenant_id,
+                'tenant_status' => $tenant->tenant_status,
+                'move_in_date' => $tenant->move_in_date,
+                'property_title' => $tenant->property_title,
+                'property_type' => $tenant->property_type,
+                'property_address' => $propertyAddress,
+                'property_id' => $tenant->property_id,
+                'deposit_required' => $tenant->deposit_required,
+                'advance_payment_months' => $tenant->advance_payment_months,
+                'billings' => $billings,
+                'due_items' => $dueItems,
+                'tenancy_history' => $tenancyHistory,
+            ]
+        ], 200);
+    }
+
+    public function mockPayments(Request $request)
+    {
+        $validated = $request->validate([
+            'billing_id' => 'required|integer',
+            'property_id' => 'required|integer',
+            'payment_type' => 'required|string|in:rent,deposit,advance',
+            'payment_method' => 'required|string|max:50',
+            'amount' => 'required|numeric|min:0.01',
+        ]);
+
+        $tenantId = DB::table('tenants')->where('user_id', Auth::id())->value('id');
+        if (!$tenantId) {
+            return response()->json(['message' => 'Tenant profile not found.'], 404);
+        }
+
+        return DB::transaction(function () use ($validated, $tenantId) {
+            $billing = DB::table('billings')
+                ->where('id', $validated['billing_id'])
+                ->where('tenant_id', $tenantId)
+                ->where('property_id', $validated['property_id'])
+                ->first();
+
+            if (!$billing) {
+                return response()->json(['message' => 'Billing record not found for this tenant.'], 404);
+            }
+
+            $property = DB::table('properties')
+                ->where('id', $validated['property_id'])
+                ->select('deposit_required', 'advance_payment_months')
+                ->first();
+
+            if (!$property) {
+                return response()->json(['message' => 'Property not found.'], 404);
+            }
+
+            $amount = round((float) $validated['amount'], 2);
+            if ($validated['payment_type'] === 'rent') {
+                if ($billing->rent_status === 'paid') {
+                    return response()->json(['message' => 'This billing is already paid.'], 422);
+                }
+
+                $verifiedRentPaid = (float) DB::table('payments')
+                    ->where('billing_id', $billing->id)
+                    ->where('status', 'verified')
+                    ->where(function ($q) {
+                        $q->whereNull('remarks')
+                          ->orWhere('remarks', 'like', 'payment_type:rent%');
+                    })
+                    ->sum('amount_paid');
+                $remaining = round(((float) $billing->rent_amount) - $verifiedRentPaid, 2);
+                if ($remaining <= 0) {
+                    return response()->json(['message' => 'This billing is already fully covered.'], 422);
+                }
+                if ($amount > $remaining) {
+                    return response()->json(['message' => 'Amount exceeds remaining balance.'], 422);
+                }
+            } elseif ($validated['payment_type'] === 'deposit') {
+                $required = round((float) $property->deposit_required, 2);
+                if ($required <= 0) {
+                    return response()->json(['message' => 'Payment type not applicable.'], 422);
+                }
+                $depositPaid = (float) ($billing->deposit_paid_amount ?? 0);
+                $remaining = round($required - $depositPaid, 2);
+                if ($remaining <= 0) {
+                    return response()->json(['message' => 'Security deposit already covered.'], 422);
+                }
+                if ($amount > $remaining) {
+                    return response()->json(['message' => 'Amount exceeds remaining balance.'], 422);
+                }
+            } elseif ($validated['payment_type'] === 'advance') {
+                $required = round((float) $property->advance_payment_months, 2);
+                if ($required <= 0) {
+                    return response()->json(['message' => 'Payment type not applicable.'], 422);
+                }
+                $advancePaid = (float) ($billing->advance_paid_amount ?? 0);
+                $remaining = round($required - $advancePaid, 2);
+                if ($remaining <= 0) {
+                    return response()->json(['message' => 'Advance payment already covered.'], 422);
+                }
+                if ($amount > $remaining) {
+                    return response()->json(['message' => 'Amount exceeds remaining balance.'], 422);
+                }
+            }
+
+            DB::table('payments')->insert([
+                'billing_id' => $billing->id,
+                'amount_paid' => $amount,
+                'payment_method' => $validated['payment_method'],
+                'payment_reference' => null,
+                'proof' => null,
+                'remarks' => 'payment_type:' . $validated['payment_type'],
+                'status' => 'verified',
+                'date_paid' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            if ($validated['payment_type'] === 'rent') {
+                $verifiedRentPaid = (float) DB::table('payments')
+                    ->where('billing_id', $billing->id)
+                    ->where('status', 'verified')
+                    ->where(function ($q) {
+                        $q->whereNull('remarks')
+                          ->orWhere('remarks', 'like', 'payment_type:rent%');
+                    })
+                    ->sum('amount_paid');
+
+                if (round(((float) $billing->rent_amount) - $verifiedRentPaid, 2) <= 0) {
+                    DB::table('billings')
+                        ->where('id', $billing->id)
+                        ->update([
+                            'rent_status' => 'paid',
+                'updated_at' => now(),
+                        ]);
+                }
+            } elseif ($validated['payment_type'] === 'deposit') {
+                DB::table('billings')
+                    ->where('id', $billing->id)
+                    ->update([
+                        'deposit_paid_amount' => DB::raw('deposit_paid_amount + ' . $amount),
+                'updated_at' => now(),
+                    ]);
+            } elseif ($validated['payment_type'] === 'advance') {
+                DB::table('billings')
+                    ->where('id', $billing->id)
+                    ->update([
+                        'advance_paid_amount' => DB::raw('advance_paid_amount + ' . $amount),
+                'updated_at' => now(),
+                    ]);
+            }
+
+            return response()->json([
+                'message' => 'Payment recorded successfully.',
+            ], 201);
+        });
     }
 
     public function submitPayment(Request $request) {
@@ -311,7 +673,7 @@ class TenantsController extends Controller
                 ->where('id', $billing->id)
                 ->update([
                     'rent_status' => 'pending',
-                    'updated_at' => now(),
+                'updated_at' => now(),
                 ]);
 
             return response()->json([
@@ -319,5 +681,138 @@ class TenantsController extends Controller
                 'payment_id' => $paymentId,
             ], 201);
         });
+    }
+
+    
+
+    public function endLeaseTenant(Request $request, $id)
+    {
+        try {
+            $ownerId = DB::table("owners")
+                ->where("user_id", Auth::id())
+                ->value("id");
+
+            if (!$ownerId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Owner profile not found.'
+                ], 404);
+            }
+
+            $tenant = DB::table('tenants')
+                ->join('properties', 'tenants.property_id', '=', 'properties.id')
+                ->select('tenants.id', 'tenants.status')
+                ->where('tenants.id', $id)
+                ->where('properties.owner_id', $ownerId)
+                ->first();
+
+            if (!$tenant) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Tenant not found for this owner.'
+                ], 404);
+            }
+
+            if ($tenant->status === 'inactive') {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Tenant is already inactive.'
+                ], 200);
+            }
+
+            DB::table('tenants')
+                ->where('id', $id)
+                ->update([
+                    'status' => 'move_out',
+                    'ended_at' => now(),
+                'updated_at' => now(),
+                ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Lease ended successfully.'
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'End lease failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function submitMoveOutNotice(Request $request)
+    {
+        $validated = $request->validate([
+            'requested_move_out_date' => 'nullable|date',
+            'message' => 'nullable|string|max:1000',
+        ]);
+
+        $tenant = DB::table('tenants')
+            ->join('properties', 'tenants.property_id', '=', 'properties.id')
+            ->select('tenants.id', 'tenants.property_id', 'properties.owner_id')
+            ->where('tenants.user_id', Auth::id())
+            ->first();
+        if (!$tenant) {
+            return response()->json(['message' => 'Tenant profile not found.'], 404);
+        }
+
+        if (!$tenant->owner_id || !$tenant->property_id) {
+            return response()->json(['message' => 'Tenant is not linked to an owner or property.'], 422);
+        }
+
+        $existing = DB::table('move_out_notices')
+            ->where('tenant_id', $tenant->id)
+            ->where('owner_id', $tenant->owner_id)
+            ->where('property_id', $tenant->property_id)
+            ->where('status', 'pending')
+            ->first();
+
+        if ($existing) {
+            DB::table('move_out_notices')
+                ->where('id', $existing->id)
+                ->update([
+                    'requested_move_out_date' => $validated['requested_move_out_date'] ?? $existing->requested_move_out_date,
+                    'message' => $validated['message'] ?? $existing->message,
+                'updated_at' => now(),
+                ]);
+
+            return response()->json([
+                'message' => 'Move-out notice updated successfully.',
+                'notice_id' => $existing->id,
+            ], 200);
+        }
+
+        $noticeId = DB::table('move_out_notices')->insertGetId([
+            'tenant_id' => $tenant->id,
+            'owner_id' => $tenant->owner_id,
+            'property_id' => $tenant->property_id,
+            'requested_move_out_date' => $validated['requested_move_out_date'] ?? null,
+            'message' => $validated['message'] ?? null,
+            'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Move-out notice submitted successfully.',
+            'notice_id' => $noticeId,
+        ], 201);
+    }
+
+    public function listMoveOutNotices()
+    {
+        $tenantId = DB::table('tenants')->where('user_id', Auth::id())->value('id');
+        if (!$tenantId) {
+            return response()->json(['message' => 'Tenant profile not found.'], 404);
+        }
+
+        $notices = DB::table('move_out_notices')
+            ->where('tenant_id', $tenantId)
+            ->orderByDesc('updated_at')
+            ->get();
+
+        return response()->json([
+            'data' => $notices,
+        ], 200);
     }
 }

@@ -189,8 +189,13 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
 Route::middleware(["auth:sanctum", "is_tenant", "verified"])->group(function () {
 
     Route::controller(TenantsController::class)->group(function() {
+        Route::get("/tenant/dashboard", "getTenantDashboard");
         Route::get("/my-billings", "getMyBillings");
+        Route::get("/tenant/billings/{tenantId}", "getTenantBillingsById");
         Route::post("/submit-payment-records", "submitPayment");
+        Route::post("/tenant/mock-payments", "mockPayments");
+        Route::post("/tenant/move-out-notices", "submitMoveOutNotice");
+        Route::get("/tenant/move-out-notices", "listMoveOutNotices");
     });
 
 });
@@ -212,10 +217,18 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
         Route::get("/owner/dashboard-summary", "getOwnerDashboardSummary");
         Route::post("/owner/payments/{paymentId}/verify", "verifyPayment");
         Route::post("/owner/payments/{paymentId}/reject", "rejectPayment");
+        Route::get("/owner/ledger/tenants", "getLedgerTenants");
+        Route::get("/owner/ledger/dues", "getLedgerDues");
+        Route::get("/owner/ledger/payments", "getLedgerPayments");
+        Route::post("/owner/ledger/payments", "createLedgerPayment");
     });
 
     Route::controller(SubscriptionController::class)->group(function() {
         Route::get("/listing-limit", "getPropertyLimit");
+    });
+    Route::controller(PayMongoController::class)->group(function() {
+        Route::post('/owner/listing-addon/intent', 'createListingAddonIntent');
+        Route::get('/owner/listing-addon/status/{addonId}', 'getListingAddonStatus');
     });
 
     Route::controller(BookingController::class)->group(function(){
@@ -228,12 +241,15 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
         Route::get("/tenants/property/{propertyId}", "SelectTenantsByProperty");
         Route::get("/tenants", "getAllTenants");
         Route::post('/tenants/{id}/move-in', "moveInTenant");
+        Route::post('/tenants/{id}/end-lease', "endLeaseTenant");
     });
 
     Route::controller(OwnerReportController::class)->group(function() {
         Route::get('/owner/reports/tenant-summary', 'tenantSummary');
         Route::get('/owner/reports/booking-logs', 'bookingLogs');
         Route::get('/owner/reports/payment-analytics', 'paymentAnalytics');
+        Route::get('/owner/move-out-notices', 'listOwnerMoveOutNotices');
+        Route::delete('/owner/move-out-notices/{id}', 'deleteMoveOutNotice');
     });
 });
 
@@ -281,3 +297,6 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
 });
+
+
+

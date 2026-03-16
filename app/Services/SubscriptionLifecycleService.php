@@ -45,7 +45,6 @@ class SubscriptionLifecycleService
             'expired_processed' => $expiredCount,
         ];
     }
-
     public function getOwnerSubscriptionSnapshotByUserId(int $userId, int $warningDays = 3): array
     {
         $owner = DB::table('owners')->where('user_id', $userId)->first();
@@ -55,6 +54,9 @@ class SubscriptionLifecycleService
                 'status' => 'none',
                 'owner_verification_status' => 'unverified',
                 'owner_verified_at' => null,
+                'listing_limit' => null,
+                'amount' => null,
+                'start_date' => null,
                 'message' => 'Owner profile not found.',
             ];
         }
@@ -74,6 +76,9 @@ class SubscriptionLifecycleService
                 'status' => 'none',
                 'owner_verification_status' => $owner->owner_verification_status ?? 'unverified',
                 'owner_verified_at' => $owner->owner_verified_at ?? null,
+                'listing_limit' => null,
+                'amount' => null,
+                'start_date' => null,
                 'message' => 'No subscription found.',
             ];
         }
@@ -96,6 +101,9 @@ class SubscriptionLifecycleService
             'status' => $subscription->status,
             'plan_name' => $subscription->plan_name,
             'billing_cycle' => $subscription->billing_cycle,
+            'amount' => $subscription->amount,
+            'start_date' => $subscription->start_date,
+            'listing_limit' => $subscription->listing_limit,
             'end_date' => $subscription->end_date,
             'days_left' => $daysLeft,
             'is_expiring_soon' => $isExpiringSoon,
@@ -155,3 +163,8 @@ class SubscriptionLifecycleService
         return true;
     }
 }
+
+
+
+
+
