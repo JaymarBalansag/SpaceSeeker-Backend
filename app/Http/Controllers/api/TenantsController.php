@@ -66,6 +66,13 @@ class TenantsController extends Controller
                 "users.first_name",
                 "users.last_name",
                 "users.email as tenant_email",
+                "users.phone_number",
+                "users.streets",
+                "users.village_name",
+                "users.town_name",
+                "users.state_name",
+                "users.region_name",
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"),
                 "properties.title as property_title",
                 "property_types.type_name as property_type_name"
             )
@@ -117,6 +124,13 @@ class TenantsController extends Controller
                 "users.first_name",
                 "users.last_name",
                 "users.email as tenant_email",
+                "users.phone_number",
+                "users.streets",
+                "users.village_name",
+                "users.town_name",
+                "users.state_name",
+                "users.region_name",
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"),
                 "properties.title as property_title",
                 "property_types.type_name as property_type_name"
             )
@@ -181,7 +195,8 @@ class TenantsController extends Controller
                     ->where('id', $id)
                     ->update([
                         'status' => 'active',
-                        'updated_at' => now(),
+                        'ended_at' => null,
+                'updated_at' => now(),
                     ]);
 
                 DB::table('billings')
@@ -189,7 +204,7 @@ class TenantsController extends Controller
                     ->where('rent_status', 'pending')
                     ->update([
                         'rent_status' => 'unpaid',
-                        'updated_at' => now()
+                'updated_at' => now()
                     ]);
 
                 return response()->json([
@@ -259,6 +274,7 @@ class TenantsController extends Controller
                 "property_types.type_name as property_type"
             )
             ->where("tenants.user_id", $userId)
+            ->orderByDesc("tenants.created_at")
             ->first();
 
         if (!$tenant) {
@@ -267,6 +283,22 @@ class TenantsController extends Controller
                 'message' => 'No tenant profile found for this user.'
             ], 404);
         }
+
+        $tenancyHistory = DB::table("tenants")
+            ->join("properties", "tenants.property_id", "=", "properties.id")
+            ->leftJoin("property_types", "properties.property_type_id", "=", "property_types.id")
+            ->select(
+                "tenants.id",
+                "tenants.status",
+                "tenants.move_in_date",
+                "tenants.ended_at",
+                "tenants.created_at",
+                "properties.title as property_title",
+                "property_types.type_name as property_type"
+            )
+            ->where("tenants.user_id", $userId)
+            ->orderByDesc("tenants.created_at")
+            ->get();
 
         $addressParts = array_filter([
             $tenant->village_name,
@@ -376,6 +408,7 @@ class TenantsController extends Controller
 
         return response()->json([
             'data' => [
+                'tenant_id' => $tenant->tenant_id,
                 'tenant_status' => $tenant->tenant_status,
                 'move_in_date' => $tenant->move_in_date,
                 'property_title' => $tenant->property_title,
@@ -386,6 +419,7 @@ class TenantsController extends Controller
                 'advance_payment_months' => $tenant->advance_payment_months,
                 'billings' => $billings,
                 'due_items' => $dueItems,
+                'tenancy_history' => $tenancyHistory,
             ]
         ], 200);
     }
@@ -502,7 +536,7 @@ class TenantsController extends Controller
                         ->where('id', $billing->id)
                         ->update([
                             'rent_status' => 'paid',
-                            'updated_at' => now(),
+                'updated_at' => now(),
                         ]);
                 }
             } elseif ($validated['payment_type'] === 'deposit') {
@@ -510,14 +544,14 @@ class TenantsController extends Controller
                     ->where('id', $billing->id)
                     ->update([
                         'deposit_paid_amount' => DB::raw('deposit_paid_amount + ' . $amount),
-                        'updated_at' => now(),
+                'updated_at' => now(),
                     ]);
             } elseif ($validated['payment_type'] === 'advance') {
                 DB::table('billings')
                     ->where('id', $billing->id)
                     ->update([
                         'advance_paid_amount' => DB::raw('advance_paid_amount + ' . $amount),
-                        'updated_at' => now(),
+                'updated_at' => now(),
                     ]);
             }
 
@@ -601,7 +635,7 @@ class TenantsController extends Controller
                 ->where('id', $billing->id)
                 ->update([
                     'rent_status' => 'pending',
-                    'updated_at' => now(),
+                'updated_at' => now(),
                 ]);
 
             return response()->json([
@@ -609,6 +643,63 @@ class TenantsController extends Controller
                 'payment_id' => $paymentId,
             ], 201);
         });
+    }
+
+    
+
+    public function endLeaseTenant(Request $request, $id)
+    {
+        try {
+            $ownerId = DB::table("owners")
+                ->where("user_id", Auth::id())
+                ->value("id");
+
+            if (!$ownerId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Owner profile not found.'
+                ], 404);
+            }
+
+            $tenant = DB::table('tenants')
+                ->join('properties', 'tenants.property_id', '=', 'properties.id')
+                ->select('tenants.id', 'tenants.status')
+                ->where('tenants.id', $id)
+                ->where('properties.owner_id', $ownerId)
+                ->first();
+
+            if (!$tenant) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Tenant not found for this owner.'
+                ], 404);
+            }
+
+            if ($tenant->status === 'inactive') {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Tenant is already inactive.'
+                ], 200);
+            }
+
+            DB::table('tenants')
+                ->where('id', $id)
+                ->update([
+                    'status' => 'inactive',
+                    'ended_at' => now(),
+                'updated_at' => now(),
+                ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Lease ended successfully.'
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'End lease failed: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     public function submitMoveOutNotice(Request $request)
@@ -631,6 +722,28 @@ class TenantsController extends Controller
             return response()->json(['message' => 'Tenant is not linked to an owner or property.'], 422);
         }
 
+        $existing = DB::table('move_out_notices')
+            ->where('tenant_id', $tenant->id)
+            ->where('owner_id', $tenant->owner_id)
+            ->where('property_id', $tenant->property_id)
+            ->where('status', 'pending')
+            ->first();
+
+        if ($existing) {
+            DB::table('move_out_notices')
+                ->where('id', $existing->id)
+                ->update([
+                    'requested_move_out_date' => $validated['requested_move_out_date'] ?? $existing->requested_move_out_date,
+                    'message' => $validated['message'] ?? $existing->message,
+                'updated_at' => now(),
+                ]);
+
+            return response()->json([
+                'message' => 'Move-out notice updated successfully.',
+                'notice_id' => $existing->id,
+            ], 200);
+        }
+
         $noticeId = DB::table('move_out_notices')->insertGetId([
             'tenant_id' => $tenant->id,
             'owner_id' => $tenant->owner_id,
@@ -638,8 +751,8 @@ class TenantsController extends Controller
             'requested_move_out_date' => $validated['requested_move_out_date'] ?? null,
             'message' => $validated['message'] ?? null,
             'status' => 'pending',
-            'created_at' => now(),
-            'updated_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
         ]);
 
         return response()->json([
@@ -657,7 +770,7 @@ class TenantsController extends Controller
 
         $notices = DB::table('move_out_notices')
             ->where('tenant_id', $tenantId)
-            ->orderByDesc('created_at')
+            ->orderByDesc('updated_at')
             ->get();
 
         return response()->json([

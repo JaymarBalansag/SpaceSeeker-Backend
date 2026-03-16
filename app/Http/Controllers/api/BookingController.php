@@ -270,20 +270,52 @@ class BookingController extends Controller
                 $tenantStatus = $moveIn->lte($today) ? 'active' : 'inactive';
                 $billingStatus = $moveIn->lte($today) ? 'unpaid' : 'pending';
 
-                $tenant = DB::table("tenants")->insertGetId([
-                    "user_id" => $approveBooking->user_id,
-                    "property_id" => $approveBooking->property_id,
-                    "created_at" => now(),
-                    "updated_at" => now(),
-                    "stay_duration" => $approveBooking->stay_duration ?? null,
-                    "move_in_date" => $approveBooking->move_in_date ?? null,
-                    "occupants_num" => $approveBooking->occupants_num ?? null,
-                    "lease_duration" => $approveBooking->lease_duration ?? null,
-                    "room_preference" => $approveBooking->room_preference ?? null,
-                    "notes" => $approveBooking->notes ?? null,
-                    "status" => $tenantStatus,
-                    "agreement" => $approveBooking->agreement ?? null,
-                ]);
+                $existingTenant = DB::table("tenants")
+                    ->where("user_id", $approveBooking->user_id)
+                    ->where("property_id", $approveBooking->property_id)
+                    ->where("status", "inactive")
+                    ->when($approveBooking->move_in_date, function ($q) use ($approveBooking) {
+                        $q->whereDate("move_in_date", $approveBooking->move_in_date);
+                    }, function ($q) {
+                        $q->whereNull("move_in_date");
+                    })
+                    ->orderByDesc("updated_at")
+                    ->first();
+
+                if ($existingTenant) {
+                    DB::table("tenants")
+                        ->where("id", $existingTenant->id)
+                        ->update([
+                            "property_id" => $approveBooking->property_id,
+                            "updated_at" => now(),
+                            "stay_duration" => $approveBooking->stay_duration ?? null,
+                            "move_in_date" => $approveBooking->move_in_date ?? null,
+                            "occupants_num" => $approveBooking->occupants_num ?? null,
+                            "lease_duration" => $approveBooking->lease_duration ?? null,
+                            "room_preference" => $approveBooking->room_preference ?? null,
+                            "notes" => $approveBooking->notes ?? null,
+                            "status" => $tenantStatus,
+                            "agreement" => $approveBooking->agreement ?? null,
+                            "ended_at" => null,
+                        ]);
+
+                    $tenant = $existingTenant->id;
+                } else {
+                    $tenant = DB::table("tenants")->insertGetId([
+                        "user_id" => $approveBooking->user_id,
+                        "property_id" => $approveBooking->property_id,
+                        "created_at" => now(),
+                        "updated_at" => now(),
+                        "stay_duration" => $approveBooking->stay_duration ?? null,
+                        "move_in_date" => $approveBooking->move_in_date ?? null,
+                        "occupants_num" => $approveBooking->occupants_num ?? null,
+                        "lease_duration" => $approveBooking->lease_duration ?? null,
+                        "room_preference" => $approveBooking->room_preference ?? null,
+                        "notes" => $approveBooking->notes ?? null,
+                        "status" => $tenantStatus,
+                        "agreement" => $approveBooking->agreement ?? null,
+                    ]);
+                }
 
                 $propertyInfo = DB::table("properties")->where("id", "=", $approveBooking->property_id)->first();
                 if (!$propertyInfo) {

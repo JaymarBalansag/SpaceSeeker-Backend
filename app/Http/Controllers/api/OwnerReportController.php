@@ -208,7 +208,7 @@ class OwnerReportController extends Controller
             ->join('users', 'users.id', '=', 'tenants.user_id')
             ->join('properties', 'properties.id', '=', 'move_out_notices.property_id')
             ->where('move_out_notices.owner_id', $ownerId)
-            ->orderByDesc('move_out_notices.created_at');
+            ->orderByDesc('move_out_notices.updated_at');
 
         $total = (clone $baseQuery)->count();
         $lastPage = (int) ceil($total / $perPage);
@@ -235,4 +235,30 @@ class OwnerReportController extends Controller
             'total' => $total,
         ], 200);
     }
+
+    public function deleteMoveOutNotice(int $id)
+    {
+        $ownerId = DB::table('owners')->where('user_id', Auth::id())->value('id');
+        if (!$ownerId) {
+            return response()->json(['message' => 'Owner profile not found.'], 404);
+        }
+
+        $notice = DB::table('move_out_notices')
+            ->where('id', $id)
+            ->where('owner_id', $ownerId)
+            ->first();
+
+        if (!$notice) {
+            return response()->json(['message' => 'Move-out notice not found.'], 404);
+        }
+
+        DB::table('move_out_notices')
+            ->where('id', $id)
+            ->delete();
+
+        return response()->json([
+            'message' => 'Move-out notice deleted successfully.',
+        ], 200);
+    }
+
 }

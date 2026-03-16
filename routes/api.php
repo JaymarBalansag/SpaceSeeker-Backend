@@ -247,6 +247,7 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
         Route::get('/owner/reports/booking-logs', 'bookingLogs');
         Route::get('/owner/reports/payment-analytics', 'paymentAnalytics');
         Route::get('/owner/move-out-notices', 'listOwnerMoveOutNotices');
+        Route::delete('/owner/move-out-notices/{id}', 'deleteMoveOutNotice');
     });
 });
 
@@ -294,5 +295,6 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
 });
+
 
 
