@@ -252,7 +252,45 @@ class TenantsController extends Controller
         return response()->json(['data' => $billings]);
     }
 
-    public function getTenantDashboard(Request $request)
+    
+    public function getTenantBillingsById(Request $request, int $tenantId)
+    {
+        $userId = Auth::id();
+
+        $ownsTenant = DB::table("tenants")
+            ->where("id", $tenantId)
+            ->where("user_id", $userId)
+            ->exists();
+
+        if (!$ownsTenant) {
+            return response()->json([
+                'data' => [],
+                'message' => 'Tenant record not found for this user.'
+            ], 404);
+        }
+
+        $billings = DB::table('billings')
+            ->join('properties', 'billings.property_id', '=', 'properties.id')
+            ->where('billings.tenant_id', $tenantId)
+            ->select(
+                'billings.id',
+                'billings.rent_amount',
+                'billings.rent_due',
+                'billings.rent_status',
+                'billings.rent_cycle',
+                'billings.deposit_paid_amount',
+                'billings.advance_paid_amount',
+                'properties.title as property_title'
+            )
+            ->orderBy('billings.rent_due', 'desc')
+            ->get();
+
+        return response()->json([
+            'data' => $billings
+        ], 200);
+    }
+
+public function getTenantDashboard(Request $request)
     {
         $userId = Auth::id();
 
@@ -685,7 +723,7 @@ class TenantsController extends Controller
             DB::table('tenants')
                 ->where('id', $id)
                 ->update([
-                    'status' => 'inactive',
+                    'status' => 'move_out',
                     'ended_at' => now(),
                 'updated_at' => now(),
                 ]);

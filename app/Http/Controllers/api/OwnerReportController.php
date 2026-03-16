@@ -54,7 +54,7 @@ class OwnerReportController extends Controller
             $counts = [
                 'total' => $tenants->count(),
                 'active' => $tenants->where('status', 'active')->count(),
-                'inactive' => $tenants->where('status', 'inactive')->count(),
+                'inactive' => $tenants->whereIn('status', ['inactive', 'move_out'])->count(),
             ];
 
             $byProperty = DB::table('tenants')

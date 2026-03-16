@@ -191,6 +191,7 @@ Route::middleware(["auth:sanctum", "is_tenant", "verified"])->group(function () 
     Route::controller(TenantsController::class)->group(function() {
         Route::get("/tenant/dashboard", "getTenantDashboard");
         Route::get("/my-billings", "getMyBillings");
+        Route::get("/tenant/billings/{tenantId}", "getTenantBillingsById");
         Route::post("/submit-payment-records", "submitPayment");
         Route::post("/tenant/mock-payments", "mockPayments");
         Route::post("/tenant/move-out-notices", "submitMoveOutNotice");
@@ -240,6 +241,7 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
         Route::get("/tenants/property/{propertyId}", "SelectTenantsByProperty");
         Route::get("/tenants", "getAllTenants");
         Route::post('/tenants/{id}/move-in', "moveInTenant");
+        Route::post('/tenants/{id}/end-lease', "endLeaseTenant");
     });
 
     Route::controller(OwnerReportController::class)->group(function() {
