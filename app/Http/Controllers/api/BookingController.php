@@ -28,17 +28,30 @@ class BookingController extends Controller
                 return response()->json(["error" => "Owners cannot book properties."], 403);
             }
 
-            $hasPendingOrApproved = DB::table('bookings')
+            $hasPendingBooking = DB::table('bookings')
                 ->where('user_id', $userId)
-                ->whereIn('status', ['pending', 'approved'])
+                ->where('status', 'pending')
                 ->exists();
 
-            $isAlreadyTenant = DB::table('tenants')
+            $hasApprovedBooking = DB::table('bookings')
+                ->where('user_id', $userId)
+                ->where('status', 'approved')
+                ->exists();
+
+            $isActiveTenant = DB::table('tenants')
                 ->where('user_id', $userId)
                 ->where('status', 'active')
                 ->exists();
 
-            if ($hasPendingOrApproved || $isAlreadyTenant) {
+            $latestTenantStatus = DB::table('tenants')
+                ->where('user_id', $userId)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->value('status');
+
+            $isMoveOutTenant = strtolower((string) $latestTenantStatus) === 'move_out';
+
+            if ($hasPendingBooking || $isActiveTenant || ($hasApprovedBooking && !$isMoveOutTenant)) {
                 return response()->json(["error" => "You already have a pending application or an active tenancy."], 403);
             }
 
