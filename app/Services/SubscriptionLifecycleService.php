@@ -40,6 +40,12 @@ class SubscriptionLifecycleService
             }
         }
 
+        Log::info('Subscription sync snapshot.', [
+            'warning_days' => $warningDays,
+            'warnings_marked' => $warningsMarked,
+            'expired_processed' => $expiredCount,
+        ]);
+
         return [
             'warnings_marked' => $warningsMarked,
             'expired_processed' => $expiredCount,
@@ -85,6 +91,12 @@ class SubscriptionLifecycleService
 
         // Defensive expiry in case scheduler has not run yet.
         if ($subscription->status === 'active' && $subscription->end_date && Carbon::parse($subscription->end_date)->isPast()) {
+            Log::info('Subscription expired on-demand during status fetch.', [
+                'subscription_id' => $subscription->id,
+                'end_date' => $subscription->end_date,
+                'owner_id' => $owner->id ?? null,
+                'user_id' => $userId,
+            ]);
             $this->expireSubscriptionAndOwner((int) $subscription->id);
             $subscription = DB::table('subscriptions')->where('id', $subscription->id)->first();
         }
@@ -163,7 +175,6 @@ class SubscriptionLifecycleService
         return true;
     }
 }
-
 
 
 
