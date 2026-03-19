@@ -69,16 +69,6 @@ class BookingController extends Controller
                 return response()->json(["error" => "Agreement checkbox must be accepted"], 422);
             }
 
-            if (in_array($property->type_name, ["Apartment", "Condo", "House", "Commercial Space"], true)) {
-                if (empty($request->lease_duration) || intval($request->lease_duration) <= 0) {
-                    return response()->json(["error" => "Invalid lease duration"], 422);
-                }
-                if (empty($request->occupant_num) || intval($request->occupant_num) <= 0) {
-                    $label = ($property->type_name === "Commercial Space") ? "area needed" : "number of occupants";
-                    return response()->json(["error" => "Invalid " . $label], 422);
-                }
-            }
-
             if (empty($request->move_in_date) || strtotime($request->move_in_date) < strtotime(date('Y-m-d'))) {
                 return response()->json(["error" => "Move-in date cannot be in the past"], 422);
             }
