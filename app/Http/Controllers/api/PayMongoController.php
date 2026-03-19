@@ -272,7 +272,8 @@ class PayMongoController extends Controller
         $billingCycle = $activeSubscription->billing_cycle;
         $unitPrice = $billingCycle === 'annual' ? 450 : 50;
         $qty = (int) $request->qty;
-        $totalAmount = $qty * $unitPrice;
+        // $totalAmount = $qty * $unitPrice;
+        $totalAmount = 1; // TEMP for testing, replace with above line in production
 
         DB::beginTransaction();
         try {
