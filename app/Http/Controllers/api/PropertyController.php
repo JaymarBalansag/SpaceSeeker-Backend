@@ -497,6 +497,7 @@ class PropertyController extends Controller
         try {
             $request->validate([
                 'is_available' => 'required|boolean',
+                'status' => 'nullable|in:active,pending,inactive',
             ]);
 
             $ownerId = DB::table("owners")
@@ -520,12 +521,17 @@ class PropertyController extends Controller
                 ], 404);
             }
 
+            $updatePayload = [
+                'is_available' => (bool) $request->boolean('is_available'),
+                'updated_at' => now(),
+            ];
+            if ($request->filled('status')) {
+                $updatePayload['status'] = $request->input('status');
+            }
+
             DB::table("properties")
                 ->where("id", $id)
-                ->update([
-                    'is_available' => (bool) $request->boolean('is_available'),
-                    'updated_at' => now(),
-                ]);
+                ->update($updatePayload);
 
             return response()->json([
                 'message' => $request->boolean('is_available')
@@ -1409,3 +1415,4 @@ class PropertyController extends Controller
 
 
 }
+
