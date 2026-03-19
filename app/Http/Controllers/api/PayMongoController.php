@@ -69,7 +69,7 @@ class PayMongoController extends Controller
             $billing = 'monthly';
             $listingLimit = 2;
         } else {
-            $amount = 2;
+            $amount = 1;
             $billing = 'annual';
             $listingLimit = 5;
         }
