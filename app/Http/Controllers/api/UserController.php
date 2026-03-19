@@ -21,31 +21,30 @@ class UserController extends Controller
     {
         try {
             $validated = $request->validated();
-
-            if (!$request->hasFile('user_img')) {
-                return response()->json([
-                    "message" => "No image provided"
-                ]);
+            $path = null;
+            if ($request->hasFile('user_img')) {
+                $path = $request->file('user_img')->store('profile_images', 'public');
             }
 
-            $path = $request->file('user_img')->store('profile_images', 'public');
-
-
             $user = $request->user();
-            DB::table('users')
-            ->where('id', $user->id)
-            ->update([
+            $updateData = [
                 'phone_number' => $validated['phone_number'] ?? $user->phone_number,
                 'streets'      => $validated['streets'] ?? $user->streets,
-                'region_name'    => $validated['region_name'] ?? $user->region_id,
-                'state_name'  => $validated['state_name'] ?? $user->province_id,
-                'town_name'   => $validated['town_name'] ?? $user->muncity_id,
-                'village_name'  => $validated['village_name'] ?? $user->barangay_id,
+                'region_name'  => $validated['region_name'] ?? $user->region_id,
+                'state_name'   => $validated['state_name'] ?? $user->province_id,
+                'town_name'    => $validated['town_name'] ?? $user->muncity_id,
+                'village_name' => $validated['village_name'] ?? $user->barangay_id,
                 'latitude'     => $validated['latitude'] ?? $user->latitude,
                 'longitude'    => $validated['longitude'] ?? $user->longitude,
-                'user_img'     => $path,
                 'iscomplete'   => true,
-            ]);
+            ];
+            if ($path) {
+                $updateData['user_img'] = $path;
+            }
+
+            DB::table('users')
+                ->where('id', $user->id)
+                ->update($updateData);
 
             $userImage = DB::table("users")
             ->select(
