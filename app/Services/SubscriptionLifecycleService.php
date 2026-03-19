@@ -150,13 +150,6 @@ class SubscriptionLifecycleService
                 ]);
 
             if ($resolvedOwnerId) {
-                DB::table('owners')
-                    ->where('id', $resolvedOwnerId)
-                    ->update([
-                        'status' => 'inactive',
-                        'updated_at' => now(),
-                    ]);
-
                 DB::table('properties')
                     ->where('owner_id', $resolvedOwnerId)
                     ->where('status', 'active')
@@ -176,6 +169,7 @@ class SubscriptionLifecycleService
         return true;
     }
 }
+
 
 
 
