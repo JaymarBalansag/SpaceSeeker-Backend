@@ -83,5 +83,73 @@ class OwnerSeeder extends Seeder
                 ]));
             }
         }
+        DB::table('users')->updateOrInsert(
+            ['email' => 'owner.annual@example.com'],
+            [
+                'first_name' => 'Annual',
+                'last_name' => 'Owner',
+                'email' => 'owner.annual@example.com',
+                'password' => Hash::make('123123123'),
+                'role' => 'owner',
+                'email_verified_at' => Carbon::now(),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]
+        );
+
+        $annualUser = DB::table('users')->where('email', 'owner.annual@example.com')->first();
+
+        if ($annualUser) {
+            $annualOwner = DB::table('owners')->where('user_id', $annualUser->id)->first();
+
+            $annualOwnerData = [
+                'paymentType' => 'gcash',
+                'phone_number' => '09170000001',
+                'status' => 'active',
+                'updated_at' => $now,
+            ];
+
+            if ($annualOwner) {
+                DB::table('owners')->where('id', $annualOwner->id)->update($annualOwnerData);
+                $annualOwnerId = $annualOwner->id;
+            } else {
+                $annualOwnerId = DB::table('owners')->insertGetId(array_merge($annualOwnerData, [
+                    'user_id' => $annualUser->id,
+                    'created_at' => $now,
+                ]));
+            }
+
+            $annualSubscription = DB::table('subscriptions')
+                ->where('owner_id', $annualOwnerId)
+                ->where('status', 'active')
+                ->first();
+
+            $annualSubscriptionData = [
+                'user_id' => $annualUser->id,
+                'owner_id' => $annualOwnerId,
+                'plan_name' => 'Annual',
+                'amount' => 1,
+                'billing_cycle' => 'annual',
+                'start_date' => $now->toDateString(),
+                'end_date' => $now->copy()->addYear()->toDateString(),
+                'payment_provider' => 'paymongo',
+                'payment_method' => 'qrph',
+                'payment_reference' => 'seed-owner-annual',
+                'status' => 'active',
+                'listing_limit' => 5,
+                'updated_at' => $now,
+            ];
+
+            if ($annualSubscription) {
+                DB::table('subscriptions')
+                    ->where('id', $annualSubscription->id)
+                    ->update($annualSubscriptionData);
+            } else {
+                DB::table('subscriptions')->insert(array_merge($annualSubscriptionData, [
+                    'created_at' => $now,
+                ]));
+            }
+        }
     }
 }
+
