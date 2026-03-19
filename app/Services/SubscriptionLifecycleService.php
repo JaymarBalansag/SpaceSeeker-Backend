@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Log;
 
 class SubscriptionLifecycleService
 {
-    public function syncStatuses(int $warningDays = 3): array
+    public function syncStatuses(int $warningDays = 7): array
     {
         $now = now();
         $today = $now->toDateString();
@@ -30,7 +30,7 @@ class SubscriptionLifecycleService
         $expiredSubscriptions = DB::table('subscriptions')
             ->where('status', 'active')
             ->whereNotNull('end_date')
-            ->whereDate('end_date', '<', $today)
+            ->whereDate('end_date', '<=', $today)
             ->get();
 
         $expiredCount = 0;
@@ -51,7 +51,7 @@ class SubscriptionLifecycleService
             'expired_processed' => $expiredCount,
         ];
     }
-    public function getOwnerSubscriptionSnapshotByUserId(int $userId, int $warningDays = 3): array
+    public function getOwnerSubscriptionSnapshotByUserId(int $userId, int $warningDays = 7): array
     {
         $owner = DB::table('owners')->where('user_id', $userId)->first();
         if (!$owner) {
@@ -90,7 +90,7 @@ class SubscriptionLifecycleService
         }
 
         // Defensive expiry in case scheduler has not run yet.
-        if ($subscription->status === 'active' && $subscription->end_date && Carbon::parse($subscription->end_date)->isPast()) {
+        if ($subscription->status === 'active' && $subscription->end_date && Carbon::parse($subscription->end_date)->startOfDay()->lte(now()->startOfDay())) {
             Log::info('Subscription expired on-demand during status fetch.', [
                 'subscription_id' => $subscription->id,
                 'end_date' => $subscription->end_date,
@@ -150,18 +150,12 @@ class SubscriptionLifecycleService
                 ]);
 
             if ($resolvedOwnerId) {
-                DB::table('owners')
-                    ->where('id', $resolvedOwnerId)
-                    ->update([
-                        'status' => 'inactive',
-                        'updated_at' => now(),
-                    ]);
-
                 DB::table('properties')
                     ->where('owner_id', $resolvedOwnerId)
                     ->where('status', 'active')
                     ->update([
-                        'status' => 'inactive',
+                        'status' => 'pending',
+                        'is_available' => false,
                         'updated_at' => now(),
                     ]);
             }
@@ -175,6 +169,13 @@ class SubscriptionLifecycleService
         return true;
     }
 }
+
+
+
+
+
+
+
 
 
 
