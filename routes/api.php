@@ -117,6 +117,7 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
     Route::controller(SubscriptionController::class)->group(function() {
         Route::get("/subscription-status/{subscriptionId}", "getSubscriptionStatus");
         Route::get("/owner/subscription-status", "getOwnerSubscriptionStatus");
+        Route::get("/owner/subscription-history", "getOwnerSubscriptionHistory");
     });
 
     Route::get("/me", function(Request $request){
@@ -229,6 +230,7 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
     Route::controller(PayMongoController::class)->group(function() {
         Route::post('/owner/listing-addon/intent', 'createListingAddonIntent');
         Route::get('/owner/listing-addon/status/{addonId}', 'getListingAddonStatus');
+        Route::post('/paymongo/renew-payment', 'createRenewalPayment');
     });
 
     Route::controller(BookingController::class)->group(function(){
@@ -297,6 +299,5 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
 });
-
 
 
