@@ -60,7 +60,7 @@ class OwnerSeeder extends Seeder
             $subscriptionData = [
                 'user_id' => $ownerUser->id,
                 'owner_id' => $ownerId,
-                'plan_name' => 'Monthly',
+                'plan_name' => 'Monthly Starter',
                 'amount' => 1,
                 'billing_cycle' => 'monthly',
                 'start_date' => $now->toDateString(),
@@ -127,7 +127,7 @@ class OwnerSeeder extends Seeder
             $annualSubscriptionData = [
                 'user_id' => $annualUser->id,
                 'owner_id' => $annualOwnerId,
-                'plan_name' => 'Annual',
+                'plan_name' => 'Annual Pro',
                 'amount' => 1,
                 'billing_cycle' => 'annual',
                 'start_date' => $now->toDateString(),
@@ -152,4 +152,5 @@ class OwnerSeeder extends Seeder
         }
     }
 }
+
 
