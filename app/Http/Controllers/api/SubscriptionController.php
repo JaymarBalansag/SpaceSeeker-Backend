@@ -113,4 +113,34 @@ class SubscriptionController extends Controller
         }
     }
 
+    public function getOwnerSubscriptionHistory()
+    {
+        try {
+            $userId = Auth::id();
+            $ownerId = DB::table('owners')->where('user_id', $userId)->value('id');
+
+            if (!$ownerId) {
+                return response()->json([
+                    'message' => 'Owner not found',
+                    'data' => [],
+                ], 200);
+            }
+
+            $history = DB::table('subscription_history')
+                ->where('owner_id', $ownerId)
+                ->orderByDesc('created_at')
+                ->get();
+
+            return response()->json([
+                'message' => 'Subscription history retrieved successfully',
+                'data' => $history,
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'message' => 'Server Error',
+                'error' => $th->getMessage()
+            ], 500);
+        }
+    }
+
 }

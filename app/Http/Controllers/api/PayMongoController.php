@@ -211,7 +211,7 @@ class PayMongoController extends Controller
             'data' => [
                 'attributes' => [
                     'payment_method' => $paymentMethodId,
-                    'return_url' => url('/payment/success')
+                    'return_url' => rtrim(config('app.frontend_url'), '/') . '/subscription/renew'
                 ]
             ]
         ]);
@@ -234,6 +234,173 @@ class PayMongoController extends Controller
         $qrCode = $attach['data']['attributes']['next_action']['code']['image_url'] ?? null;
 
         // Fallback to the other common path just in case
+        if (!$qrCode) {
+            $qrCode = $attach['data']['attributes']['next_action']['render_qr_code'] ?? null;
+        }
+
+        return response()->json([
+            'qr_code' => $qrCode,
+            'subscription_id' => $subscriptionId,
+            'full_response' => $attach
+        ]);
+    }
+
+    public function createRenewalPayment(Request $request) {
+        $user = Auth::user();
+
+        if ($user->role !== 'owner') {
+            return response()->json(['message' => 'Only owners can renew subscriptions'], 403);
+        }
+
+        $request->validate([
+            'plan' => 'required|in:Monthly,Annual',
+            'paymentType' => "required|string",
+            'phone' => 'required|string',
+            'permit_acknowledged' => 'required|accepted',
+        ]);
+
+        if ($request->plan === 'Monthly') {
+            $amount = 1;
+            $billing = 'monthly';
+            $listingLimit = 2;
+        } else {
+            $amount = 1;
+            $billing = 'annual';
+            $listingLimit = 5;
+        }
+
+        $owner = DB::table('owners')->where('user_id', $user->id)->first();
+        if (!$owner) {
+            return response()->json(['message' => 'Owner profile not found'], 404);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $subscriptionId = DB::table('subscriptions')->insertGetId([
+                'user_id' => $user->id,
+                'owner_id' => $owner->id,
+                'plan_name' => $request->plan,
+                'amount' => $amount,
+                'billing_cycle' => $billing,
+                'listing_limit' => $listingLimit,
+                'start_date' => Carbon::now(),
+                'payment_provider' => 'paymongo',
+                'payment_method' => 'qrph',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Failed to initiate renewal: ' . $e->getMessage()], 500);
+        }
+
+        $intentResponse = $this->payMongoHttp()
+        ->post('https://api.paymongo.com/v1/payment_intents', [
+            'data' => [
+                'attributes' => [
+                    'amount' => $amount * 100,
+                    'payment_method_allowed' => ['qrph'],
+                    'currency' => 'PHP',
+                    'description' => $subscriptionId,
+                ]
+            ]
+        ]);
+
+        if (!$intentResponse->successful()) {
+            DB::table('subscriptions')->where('id', $subscriptionId)->update([
+                'status' => 'failed',
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to create payment intent',
+                'details' => $intentResponse->json(),
+            ], 502);
+        }
+
+        $intent = $intentResponse->json();
+        $intentId = $intent['data']['id'] ?? null;
+
+        if (!$intentId) {
+            DB::table('subscriptions')->where('id', $subscriptionId)->update([
+                'status' => 'failed',
+                'updated_at' => now(),
+            ]);
+
+            return response()->json(['error' => 'Payment intent id missing'], 502);
+        }
+
+        DB::table('subscriptions')->where('id', $subscriptionId)->update([
+            'payment_intent_id' => $intentId,
+            'updated_at' => now(),
+        ]);
+
+        $methodResponse = $this->payMongoHttp()
+        ->post('https://api.paymongo.com/v1/payment_methods', [
+            'data' => [
+                'attributes' => [
+                    'type' => 'qrph',
+                    'billing' => [
+                        'name' => $user->first_name . " " . $user->last_name,
+                        'email' => $user->email
+                    ]
+                ]
+            ]
+        ]);
+
+        if (!$methodResponse->successful()) {
+            DB::table('subscriptions')->where('id', $subscriptionId)->update([
+                'status' => 'failed',
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to create payment method',
+                'details' => $methodResponse->json(),
+            ], 502);
+        }
+
+        $method = $methodResponse->json();
+        $paymentMethodId = $method['data']['id'] ?? null;
+
+        if (!$paymentMethodId) {
+            DB::table('subscriptions')->where('id', $subscriptionId)->update([
+                'status' => 'failed',
+                'updated_at' => now(),
+            ]);
+
+            return response()->json(['error' => 'Payment method id missing'], 502);
+        }
+
+        $attachResponse = $this->payMongoHttp()
+        ->post("https://api.paymongo.com/v1/payment_intents/{$intentId}/attach", [
+            'data' => [
+                'attributes' => [
+                    'payment_method' => $paymentMethodId,
+                    'return_url' => url('/payment/success')
+                ]
+            ]
+        ]);
+
+        if (!$attachResponse->successful()) {
+            DB::table('subscriptions')->where('id', $subscriptionId)->update([
+                'status' => 'failed',
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to attach payment method',
+                'details' => $attachResponse->json(),
+            ], 502);
+        }
+
+        $attach = $attachResponse->json();
+        $qrCode = $attach['data']['attributes']['next_action']['code']['image_url'] ?? null;
+
         if (!$qrCode) {
             $qrCode = $attach['data']['attributes']['next_action']['render_qr_code'] ?? null;
         }
@@ -513,48 +680,153 @@ class PayMongoController extends Controller
                         return response()->json(['message' => 'User not found'], 200);
                     }
 
-                    // Subscription End
-                    $endDate = $sub->billing_cycle === 'monthly' ? now()->addMonth() : now()->addYear();
+                    if ($sub->owner_id) {
+                        $owner = DB::table('owners')->where('id', $sub->owner_id)->first();
+                        if (!$owner) {
+                            $owner = DB::table('owners')->where('user_id', $user->id)->first();
+                        }
 
-                    // Update Subscription to Active
-                    DB::table('subscriptions')->where('id', $sub->id)->update([
-                        'status' => 'active',
-                        'end_date' => $endDate,
-                        'updated_at' => now()
-                    ]);
+                        if (!$owner) {
+                            DB::rollBack();
+                            Log::warning("Webhook owner not found for renewal sub {$sub->id}");
+                            return response()->json(['message' => 'Owner not found'], 200);
+                        }
 
-                    // Create or Get Owner Record (using updateOrInsert to avoid duplicates)
-                    $owner = DB::table('owners')->where('user_id', $user->id)->first();
-                    if ($owner) {
-                        DB::table('owners')
-                            ->where('user_id', $user->id)
-                            ->update([
+                        $today = Carbon::today();
+                        $targetSubscription = DB::table('subscriptions')
+                            ->where('owner_id', $owner->id)
+                            ->whereIn('status', ['active', 'expired'])
+                            ->orderByRaw("CASE WHEN status='active' THEN 0 ELSE 1 END")
+                            ->orderByDesc('end_date')
+                            ->orderByDesc('id')
+                            ->first();
+
+                        $periodStart = $today;
+                        if ($targetSubscription && $targetSubscription->status === 'active' && $targetSubscription->end_date) {
+                            $targetEnd = Carbon::parse($targetSubscription->end_date);
+                            if ($targetEnd->greaterThanOrEqualTo($today)) {
+                                $periodStart = $targetEnd->copy()->addDay();
+                            }
+                        }
+
+                        $periodEnd = $sub->billing_cycle === 'monthly'
+                            ? Carbon::parse($periodStart)->addMonth()
+                            : Carbon::parse($periodStart)->addYear();
+
+                        if ($targetSubscription) {
+                            DB::table('subscriptions')->where('id', $targetSubscription->id)->update([
+                                'plan_name' => $sub->plan_name,
+                                'amount' => $sub->amount,
+                                'billing_cycle' => $sub->billing_cycle,
+                                'listing_limit' => $sub->listing_limit,
+                                'payment_provider' => $sub->payment_provider,
+                                'payment_method' => $sub->payment_method,
+                                'start_date' => $periodStart,
+                                'end_date' => $periodEnd,
                                 'status' => 'active',
-                                'owner_verification_status' => $owner->owner_verification_status === 'verified' ? 'verified' : 'pending',
-                                'owner_verified_at' => $owner->owner_verification_status === 'verified' ? $owner->owner_verified_at : null,
                                 'updated_at' => now(),
                             ]);
-                    } else {
-                        DB::table('owners')->insert([
-                            'user_id' => $user->id,
-                            'status' => 'active',
-                            'owner_verification_status' => 'pending',
-                            'owner_verified_at' => null,
+                            $activeSubscriptionId = $targetSubscription->id;
+                        } else {
+                            DB::table('subscriptions')->where('id', $sub->id)->update([
+                                'owner_id' => $owner->id,
+                                'plan_name' => $sub->plan_name,
+                                'amount' => $sub->amount,
+                                'billing_cycle' => $sub->billing_cycle,
+                                'listing_limit' => $sub->listing_limit,
+                                'payment_provider' => $sub->payment_provider,
+                                'payment_method' => $sub->payment_method,
+                                'start_date' => $periodStart,
+                                'end_date' => $periodEnd,
+                                'status' => 'active',
+                                'updated_at' => now(),
+                            ]);
+                            $activeSubscriptionId = $sub->id;
+                        }
+
+                        DB::table('subscription_history')->insert([
+                            'subscription_id' => $activeSubscriptionId,
+                            'user_id' => $sub->user_id,
+                            'owner_id' => $owner->id,
+                            'action' => 'renewal',
+                            'plan_name' => $sub->plan_name,
+                            'billing_cycle' => $sub->billing_cycle,
+                            'amount' => $sub->amount,
+                            'period_start' => $periodStart,
+                            'period_end' => $periodEnd,
+                            'payment_reference' => $sub->payment_intent_id ?? $paymentIntentId,
+                            'payment_provider' => $sub->payment_provider,
+                            'payment_method' => $sub->payment_method,
                             'created_at' => now(),
                             'updated_at' => now(),
                         ]);
+
+                        if ($activeSubscriptionId !== $sub->id) {
+                            DB::table('subscriptions')->where('id', $sub->id)->update([
+                                'status' => 'cancelled',
+                                'updated_at' => now(),
+                            ]);
+                        }
+
+                        DB::commit();
+                        Log::info("Subscription renewed for owner #{$owner->id}");
+                    } else {
+                        $endDate = $sub->billing_cycle === 'monthly' ? now()->addMonth() : now()->addYear();
+
+                        DB::table('subscriptions')->where('id', $sub->id)->update([
+                            'status' => 'active',
+                            'start_date' => now()->toDateString(),
+                            'end_date' => $endDate,
+                            'updated_at' => now()
+                        ]);
+
+                        $owner = DB::table('owners')->where('user_id', $user->id)->first();
+                        if ($owner) {
+                            DB::table('owners')
+                                ->where('user_id', $user->id)
+                                ->update([
+                                    'status' => 'active',
+                                    'owner_verification_status' => $owner->owner_verification_status === 'verified' ? 'verified' : 'pending',
+                                    'owner_verified_at' => $owner->owner_verification_status === 'verified' ? $owner->owner_verified_at : null,
+                                    'updated_at' => now(),
+                                ]);
+                        } else {
+                            DB::table('owners')->insert([
+                                'user_id' => $user->id,
+                                'status' => 'active',
+                                'owner_verification_status' => 'pending',
+                                'owner_verified_at' => null,
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+                        }
+
+                        $owner = DB::table('owners')->where('user_id', $user->id)->first();
+
+                        DB::table('subscriptions')->where('id', $sub->id)->update(['owner_id' => $owner->id]);
+
+                        $user->update(['role' => 'owner']);
+
+                        DB::table('subscription_history')->insert([
+                            'subscription_id' => $sub->id,
+                            'user_id' => $sub->user_id,
+                            'owner_id' => $owner->id,
+                            'action' => 'activation',
+                            'plan_name' => $sub->plan_name,
+                            'billing_cycle' => $sub->billing_cycle,
+                            'amount' => $sub->amount,
+                            'period_start' => now()->toDateString(),
+                            'period_end' => $endDate,
+                            'payment_reference' => $sub->payment_intent_id ?? $paymentIntentId,
+                            'payment_provider' => $sub->payment_provider,
+                            'payment_method' => $sub->payment_method,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+
+                        DB::commit();
+                        Log::info("User {$user->email} successfully upgraded for Sub #{$sub->id}");
                     }
-
-                    $owner = DB::table('owners')->where('user_id', $user->id)->first();
-
-                    // Link Owner to Subscription
-                    DB::table('subscriptions')->where('id', $sub->id)->update(['owner_id' => $owner->id]);
-
-                    // Update User Role to Owner
-                    $user->update(['role' => 'owner']);
-
-                    DB::commit();
-                    Log::info("User {$user->email} successfully upgraded for Sub #{$sub->id}");
                 } catch (\Exception $e) {
                     DB::rollBack();
                     Log::error('Webhook DB Error: ' . $e->getMessage());
@@ -665,4 +937,3 @@ class PayMongoController extends Controller
         return response()->json(['message' => 'Processed'], 200);
     }
 }
-
