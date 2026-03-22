@@ -65,6 +65,18 @@ class BookingController extends Controller
                 return response()->json(["error" => "Property Not Found"], 404);
             }
 
+            $ownerBillingCycle = DB::table('subscriptions')
+                ->where('owner_id', $property->owner_id)
+                ->where('status', 'active')
+                ->whereDate('end_date', '>=', now()->toDateString())
+                ->orderByDesc('end_date')
+                ->orderByDesc('id')
+                ->value('billing_cycle');
+
+            if (strtolower((string) $ownerBillingCycle) === 'monthly') {
+                return response()->json(["error" => "Booking is not available for this property at the moment."], 403);
+            }
+
             if (empty($request->agreement)) {
                 return response()->json(["error" => "Agreement checkbox must be accepted"], 422);
             }
