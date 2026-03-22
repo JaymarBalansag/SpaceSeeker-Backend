@@ -312,6 +312,33 @@ class MessageController extends Controller
         return $this->sendMessage($request);
     }
 
+    public function markConversationAsRead(Request $request, $conversationId)
+    {
+        $authId = Auth::id();
+        $conversation = DB::table('conversations')->where('id', $conversationId)->first();
+
+        if (! $conversation) {
+            return response()->json(['error' => 'Conversation not found'], 404);
+        }
+        if (! $this->isParticipant($conversation, $authId)) {
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
+
+        DB::table('messages')
+            ->where('conversation_id', $conversation->id)
+            ->where('receiver_id', $authId)
+            ->whereNull('read_at')
+            ->update([
+                'read_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+        return response()->json([
+            'message' => 'Conversation marked as read.',
+            'conversation_id' => (int) $conversation->id,
+        ], 200);
+    }
+
     public function messagesByConversation(Request $request, $conversationId)
     {
         $authId = Auth::id();

@@ -168,6 +168,7 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
         Route::post('/conversations/start', 'startConversation');
         Route::get('/conversations/{conversationId}/messages', 'messagesByConversation');
         Route::post('/conversations/{conversationId}/messages', 'sendConversationMessage');
+        Route::post('/conversations/{conversationId}/read', 'markConversationAsRead');
     });
 
     Route::controller(NotificationController::class)->group(function() {
