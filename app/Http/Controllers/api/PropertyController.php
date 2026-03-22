@@ -639,7 +639,16 @@ class PropertyController extends Controller
                 ->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
                 ->join('owners', 'properties.owner_id', '=', 'owners.id')
                 ->join('users', 'owners.user_id', '=', 'users.id')
-                ->join("subscriptions", "owners.id", '=', "subscriptions.owner_id")
+                ->leftJoinSub(
+                    DB::table('subscriptions')
+                        ->select('subscriptions.owner_id', 'subscriptions.billing_cycle')
+                        ->where('subscriptions.status', 'active')
+                        ->whereDate('subscriptions.end_date', '>=', now()->toDateString()),
+                    'active_subscription',
+                    function ($join) {
+                        $join->on('active_subscription.owner_id', '=', 'owners.id');
+                    }
+                )
                 ->leftJoinSub($reviewSummary, 'review_summary', function ($join) {
                     $join->on('review_summary.property_id', '=', 'properties.id');
                 })
@@ -649,6 +658,7 @@ class PropertyController extends Controller
                     'users.first_name as owner_first_name',
                     'users.last_name as owner_last_name',
                     'owners.owner_verification_status',
+                    'active_subscription.billing_cycle as owner_billing_cycle',
                     DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
                     DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img"),
@@ -657,6 +667,7 @@ class PropertyController extends Controller
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
                 ->where('properties.id', $id)
+                ->orderByDesc('properties.id')
                 ->first();
 
             if (!$property) {
@@ -743,6 +754,8 @@ class PropertyController extends Controller
                     'curfew_to' => $property->curfew_to,
                     'status' => $property->status,
                     'is_available' => (bool) $property->is_available,
+                    'owner_billing_cycle' => $property->owner_billing_cycle,
+                    'accepts_bookings' => strtolower((string) $property->owner_billing_cycle) === 'annual',
                     'region_name' => $property->region_name,
                     'state_name' => $property->state_name,
                     'town_name' => $property->town_name,
