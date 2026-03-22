@@ -53,8 +53,17 @@ class MessageController extends Controller
         $limit = max(1, min((int) $request->integer('limit', 20), 50));
         $cursor = $request->query('cursor');
 
+        $unreadMessages = DB::table('messages')
+            ->select('conversation_id', DB::raw('COUNT(*) as unread_count'))
+            ->where('receiver_id', $authId)
+            ->whereNull('read_at')
+            ->groupBy('conversation_id');
+
         $query = DB::table('conversations as c')
             ->leftJoin('messages as lm', 'lm.id', '=', 'c.last_message_id')
+            ->leftJoinSub($unreadMessages, 'um', function ($join) {
+                $join->on('um.conversation_id', '=', 'c.id');
+            })
             ->where(function ($q) use ($authId) {
                 $q->where('c.user_low_id', $authId)
                     ->orWhere('c.user_high_id', $authId);
@@ -66,7 +75,8 @@ class MessageController extends Controller
                 'c.property_id',
                 'c.last_message_id',
                 'c.last_message_at',
-                'lm.message as last_message_text'
+                'lm.message as last_message_text',
+                DB::raw('COALESCE(um.unread_count, 0) as unread_count')
             )
             ->orderByDesc('c.last_message_at')
             ->orderByDesc('c.id');
@@ -101,6 +111,8 @@ class MessageController extends Controller
             $otherUserId = (int) ($conversation->user_low_id == $authId ? $conversation->user_high_id : $conversation->user_low_id);
             $user = $users->get($otherUserId);
 
+            $unreadCount = (int) ($conversation->unread_count ?? 0);
+
             return [
                 'conversation_id' => $conversation->id,
                 'user_id' => $otherUserId,
@@ -108,6 +120,8 @@ class MessageController extends Controller
                 'lastMessage' => $conversation->last_message_text,
                 'last_message_time' => $conversation->last_message_at,
                 'profile_photo' => ($user && $user->user_img) ? asset('storage/' . $user->user_img) : null,
+                'unread_count' => $unreadCount,
+                'has_unread' => $unreadCount > 0,
             ];
         });
 
@@ -278,17 +292,6 @@ class MessageController extends Controller
 
             $message = Message::findOrFail($messageId);
             broadcast(new MessageSent($message))->toOthers();
-
-            $senderName = trim((string) DB::table('users')
-                ->where('id', $authId)
-                ->selectRaw("CONCAT(first_name, ' ', last_name) as full_name")
-                ->value('full_name'));
-
-            $payload = $this->notificationLogicObserver->buildMessagePayload(
-                $senderName !== '' ? $senderName : 'A user',
-                (int) $conversation->id
-            );
-            $this->notificationService->createForUser((int) $receiverId, $payload);
 
             return response()->json([
                 'message' => $message,
