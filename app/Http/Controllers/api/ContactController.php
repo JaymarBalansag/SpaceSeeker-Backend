@@ -3,9 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Mail\ContactInquiryMail;
+use App\Models\Inquiry;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Mail;
 
 class ContactController extends Controller
 {
@@ -17,23 +16,17 @@ class ContactController extends Controller
             'message' => ['required', 'string', 'min:10', 'max:5000'],
         ]);
 
-        $submittedAt = now();
-        $supportAddress = env('SUPPORT_MAIL_FROM_ADDRESS', 'rentahubsupport@gmail.com');
-        $supportName = env('SUPPORT_MAIL_FROM_NAME', 'RentaHub Support');
-
-        Mail::mailer('support_smtp')
-            ->to($supportAddress, $supportName)
-            ->send(new ContactInquiryMail(
-                name: trim($validated['name']),
-                email: trim($validated['email']),
-                inquiryMessage: trim($validated['message']),
-                submittedAt: $submittedAt->toDateTimeString(),
-                ipAddress: $request->ip(),
-                userAgent: (string) $request->userAgent(),
-            ));
+        Inquiry::create([
+            'name' => trim($validated['name']),
+            'email' => trim($validated['email']),
+            'message' => trim($validated['message']),
+            'status' => 'unread',
+            'ip_address' => $request->ip(),
+            'user_agent' => (string) $request->userAgent(),
+        ]);
 
         return response()->json([
-            'message' => 'Your message has been sent to the RentaHub support team.',
+            'message' => 'Your inquiry has been received by the RentaHub admin team.',
         ], 201);
     }
 }

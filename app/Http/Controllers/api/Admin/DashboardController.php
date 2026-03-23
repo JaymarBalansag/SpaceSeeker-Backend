@@ -60,6 +60,14 @@ class DashboardController extends Controller
                 ->where('status', 'pending')
                 ->min('created_at');
 
+            $unreadInquiriesCount = (int) DB::table('inquiries')
+                ->where('status', 'unread')
+                ->count();
+
+            $unreadInquiriesOldest = DB::table('inquiries')
+                ->where('status', 'unread')
+                ->min('created_at');
+
             $pendingProperties = DB::table('properties')
                 ->join('owners', 'properties.owner_id', '=', 'owners.id')
                 ->join('users', 'owners.user_id', '=', 'users.id')
@@ -106,12 +114,11 @@ class DashboardController extends Controller
                             'route' => '/admin/properties',
                         ],
                         [
-                            'id' => 'reported_tickets',
-                            'label' => 'Reported issues/tickets',
-                            'count' => null,
-                            'waiting' => 'Not implemented yet',
-                            'route' => null,
-                            'is_static' => true,
+                            'id' => 'inquiries',
+                            'label' => 'Inquiries',
+                            'count' => $unreadInquiriesCount,
+                            'waiting' => $this->formatOldestWaiting($unreadInquiriesOldest),
+                            'route' => '/admin/inquiries',
                         ],
                     ],
                     'pending_properties' => $pendingProperties,
