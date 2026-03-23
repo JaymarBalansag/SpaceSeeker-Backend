@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\OwnerReportController;
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use App\Http\Controllers\Api\Admin\Users\UserController as AdminUserController;
 use App\Http\Controllers\Api\Admin\DashboardController as AdminDashboardController;
+use App\Http\Controllers\Api\Admin\InquiryController as AdminInquiryController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
 use App\Http\Controllers\Api\Admin\Booking\BookingController as AdminBookingController;
@@ -302,5 +303,11 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::get('/admin/bookings/{id}', 'show');
         Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
-});
 
+    Route::controller(AdminInquiryController::class)->group(function() {
+        Route::get('/admin/inquiries', 'index');
+        Route::delete('/admin/inquiries', 'destroyMany');
+        Route::get('/admin/inquiries/{id}', 'show');
+        Route::patch('/admin/inquiries/{id}/resolve', 'resolve');
+    });
+});
