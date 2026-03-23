@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\TenantsController;
+use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\RecommendedController;
@@ -69,6 +70,8 @@ Route::controller(PayMongoController::class)->group(function () {
 });
 
 Route::middleware("is_public")->group(function () {
+
+    Route::post('/contact-us', [ContactController::class, 'submit'])->middleware('throttle:3,1');
 
     Route::controller(AuthController::class)->group(function(){
         Route::post("/login", "login");
@@ -300,5 +303,4 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::patch('/admin/bookings/{id}/force-cancel', 'forceCancel');
     });
 });
-
 
