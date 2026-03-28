@@ -108,6 +108,9 @@ class SubscriptionLifecycleService
             $isExpiringSoon = $subscription->status === 'active' && $daysLeft >= 0 && $daysLeft <= $warningDays;
         }
 
+        $canChangePlan = in_array($subscription->status, ['active', 'expired'], true)
+            && ($subscription->status === 'expired' || ($daysLeft !== null && $daysLeft <= $warningDays));
+
         return [
             'subscription_id' => $subscription->id,
             'status' => $subscription->status,
@@ -120,6 +123,11 @@ class SubscriptionLifecycleService
             'days_left' => $daysLeft,
             'is_expiring_soon' => $isExpiringSoon,
             'can_manage_properties' => $subscription->status === 'active',
+            'can_change_plan' => $canChangePlan,
+            'plan_change_window_days' => $warningDays,
+            'plan_change_message' => $canChangePlan
+                ? 'You can change your plan now.'
+                : 'Plan changes become available in the last 7 days of your subscription or after expiry.',
             'warning_sent_at' => $subscription->warning_sent_at ?? null,
             'owner_verification_status' => $owner->owner_verification_status ?? 'unverified',
             'owner_verified_at' => $owner->owner_verified_at ?? null,
