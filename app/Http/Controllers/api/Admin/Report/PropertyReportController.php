@@ -20,7 +20,21 @@ class PropertyReportController extends Controller
         'safety_concern',
         'other',
     ];
+    private function normalizeStatusFilter(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        return in_array($normalized, array_merge(['all'], $this->allowedStatuses), true)
+            ? $normalized
+            : 'all';
+    }
 
+    private function normalizeReasonFilter(string $value): string
+    {
+        $normalized = strtolower(trim($value));
+        return in_array($normalized, array_merge(['all'], $this->allowedReasons), true)
+            ? $normalized
+            : 'all';
+    }
     private function baseQuery()
     {
         return DB::table('property_reports')
@@ -78,8 +92,8 @@ class PropertyReportController extends Controller
     public function index(Request $request)
     {
         try {
-            $status = strtolower(trim((string) $request->query('status', 'all')));
-            $reason = strtolower(trim((string) $request->query('reason', 'all')));
+            $status = $this->normalizeStatusFilter((string) $request->query('status', 'all'));
+            $reason = $this->normalizeReasonFilter((string) $request->query('reason', 'all'));
             $search = trim((string) $request->query('search', ''));
 
             $query = $this->baseQuery()->orderByDesc('property_reports.created_at');
