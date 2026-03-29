@@ -74,6 +74,29 @@ class PayMongoController extends Controller
     }
 
 
+    private function resolvePendingSubscriptionIds(?string $paymentIntentId, ?int $targetSubId): array
+    {
+        $query = DB::table('subscriptions')->where('status', 'pending');
+
+        if ($paymentIntentId) {
+            $query->where('payment_intent_id', $paymentIntentId);
+        } elseif ($targetSubId) {
+            $query->where('id', $targetSubId);
+        } else {
+            return [];
+        }
+
+        return array_map('intval', $query->pluck('id')->all());
+    }
+
+    private function finalizePendingSubscriptions(array $subscriptionIds, string $finalStatus): void
+    {
+        foreach ($subscriptionIds as $subscriptionId) {
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, $finalStatus);
+        }
+    }
+
+
     public function createPayment(Request $request) {
         $user = Auth::user();
 
@@ -162,10 +185,7 @@ class PayMongoController extends Controller
         ]);
 
         if (!$intentResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to create payment intent',
@@ -177,10 +197,7 @@ class PayMongoController extends Controller
         $intentId = $intent['data']['id'] ?? null;
 
         if (!$intentId) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json(['error' => 'Payment intent id missing'], 502);
         }
@@ -204,10 +221,7 @@ class PayMongoController extends Controller
         ]);
 
         if (!$methodResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to create payment method',
@@ -219,10 +233,7 @@ class PayMongoController extends Controller
         $paymentMethodId = $method['data']['id'] ?? null;
 
         if (!$paymentMethodId) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json(['error' => 'Payment method id missing'], 502);
         }
@@ -238,10 +249,7 @@ class PayMongoController extends Controller
         ]);
 
         if (!$attachResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to attach payment method',
@@ -322,10 +330,7 @@ class PayMongoController extends Controller
         ]);
 
         if (!$intentResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to create payment intent',
@@ -337,10 +342,7 @@ class PayMongoController extends Controller
         $intentId = $intent['data']['id'] ?? null;
 
         if (!$intentId) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json(['error' => 'Payment intent id missing'], 502);
         }
@@ -364,10 +366,7 @@ class PayMongoController extends Controller
         ]);
 
         if (!$methodResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to create payment method',
@@ -379,10 +378,7 @@ class PayMongoController extends Controller
         $paymentMethodId = $method['data']['id'] ?? null;
 
         if (!$paymentMethodId) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json(['error' => 'Payment method id missing'], 502);
         }
@@ -398,10 +394,7 @@ class PayMongoController extends Controller
         ]);
 
         if (!$attachResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to attach payment method',
@@ -496,10 +489,7 @@ class PayMongoController extends Controller
             ]);
 
         if (!$intentResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to create payment intent',
@@ -511,10 +501,7 @@ class PayMongoController extends Controller
         $intentId = $intent['data']['id'] ?? null;
 
         if (!$intentId) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json(['error' => 'Payment intent id missing'], 502);
         }
@@ -538,10 +525,7 @@ class PayMongoController extends Controller
             ]);
 
         if (!$methodResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to create payment method',
@@ -553,10 +537,7 @@ class PayMongoController extends Controller
         $paymentMethodId = $method['data']['id'] ?? null;
 
         if (!$paymentMethodId) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json(['error' => 'Payment method id missing'], 502);
         }
@@ -572,10 +553,7 @@ class PayMongoController extends Controller
             ]);
 
         if (!$attachResponse->successful()) {
-            DB::table('subscriptions')->where('id', $subscriptionId)->update([
-                'status' => 'failed',
-                'updated_at' => now(),
-            ]);
+            $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt((int) $subscriptionId, 'failed');
 
             return response()->json([
                 'error' => 'Failed to attach payment method',
@@ -1067,17 +1045,10 @@ class PayMongoController extends Controller
         elseif ($type === 'payment.failed') {
             Log::warning("Payment Failed for Sub ID: {$targetSubId}");
             if ($paymentIntentId || $targetSubId) {
-                $query = DB::table('subscriptions');
-                if ($paymentIntentId) {
-                    $query->where('payment_intent_id', $paymentIntentId);
-                } else {
-                    $query->where('id', $targetSubId);
-                }
-
-                $query->update([
-                    'status' => 'failed',
-                    'updated_at' => now()
-                ]);
+                $this->finalizePendingSubscriptions(
+                    $this->resolvePendingSubscriptionIds($paymentIntentId, $targetSubId),
+                    'failed'
+                );
 
                 $addonQuery = DB::table('listing_limit_addons');
                 if ($paymentIntentId) {
@@ -1097,17 +1068,10 @@ class PayMongoController extends Controller
         elseif ($type === 'qrph.expired') {
             Log::info("QR Expired for Sub ID: {$targetSubId}");
             if ($paymentIntentId || $targetSubId) {
-                $query = DB::table('subscriptions')->where('status', 'pending');
-                if ($paymentIntentId) {
-                    $query->where('payment_intent_id', $paymentIntentId);
-                } else {
-                    $query->where('id', $targetSubId);
-                }
-
-                $query->update([
-                        'status' => 'expired',
-                        'updated_at' => now()
-                ]);
+                $this->finalizePendingSubscriptions(
+                    $this->resolvePendingSubscriptionIds($paymentIntentId, $targetSubId),
+                    'expired'
+                );
 
                 $addonQuery = DB::table('listing_limit_addons')->where('status', 'pending');
                 if ($paymentIntentId) {

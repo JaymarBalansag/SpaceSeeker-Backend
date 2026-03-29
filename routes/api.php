@@ -122,6 +122,7 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
         Route::get("/subscription-status/{subscriptionId}", "getSubscriptionStatus");
         Route::get("/owner/subscription-status", "getOwnerSubscriptionStatus");
         Route::get("/owner/subscription-history", "getOwnerSubscriptionHistory");
+        Route::post("/subscriptions/{subscriptionId}/cancel-pending", "cancelPendingSubscription");
     });
 
     Route::get("/me", function(Request $request){

@@ -137,6 +137,83 @@ class SubscriptionLifecycleService
         ];
     }
 
+
+    public function resolvePendingSubscriptionAttempt(int $subscriptionId, string $finalStatus = 'cancelled'): array
+    {
+        $subscription = DB::table('subscriptions')->where('id', $subscriptionId)->first();
+        if (!$subscription) {
+            return [
+                'found' => false,
+                'previous_status' => null,
+                'final_status' => null,
+                'owner_application_cleared' => false,
+            ];
+        }
+
+        $normalizedStatus = in_array($finalStatus, ['cancelled', 'failed', 'expired'], true)
+            ? $finalStatus
+            : 'cancelled';
+
+        if ($subscription->status !== 'pending') {
+            return [
+                'found' => true,
+                'previous_status' => $subscription->status,
+                'final_status' => $subscription->status,
+                'owner_application_cleared' => false,
+            ];
+        }
+
+        $owner = DB::table('owners')->where('user_id', $subscription->user_id)->first();
+        $userRole = strtolower((string) DB::table('users')->where('id', $subscription->user_id)->value('role'));
+
+        $isInitialOwnerActivation = !$subscription->owner_id && $userRole !== 'owner';
+        $ownerApplicationCleared = $isInitialOwnerActivation
+            && $owner
+            && strtolower((string) ($owner->status ?? '')) === 'pending'
+            && !$this->hasCompletedOwnerLifecycle((int) $subscription->user_id, $owner->id ?? null, (int) $subscription->id);
+
+        DB::transaction(function () use ($subscription, $normalizedStatus, $owner, $ownerApplicationCleared) {
+            DB::table('subscriptions')
+                ->where('id', $subscription->id)
+                ->update([
+                    'status' => $normalizedStatus,
+                    'updated_at' => now(),
+                ]);
+
+            if ($ownerApplicationCleared && $owner) {
+                DB::table('owners')->where('id', $owner->id)->delete();
+            }
+        });
+
+        Log::info('Resolved pending subscription attempt.', [
+            'subscription_id' => $subscriptionId,
+            'previous_status' => $subscription->status,
+            'final_status' => $normalizedStatus,
+            'owner_application_cleared' => $ownerApplicationCleared,
+        ]);
+
+        return [
+            'found' => true,
+            'previous_status' => $subscription->status,
+            'final_status' => $normalizedStatus,
+            'owner_application_cleared' => $ownerApplicationCleared,
+        ];
+    }
+
+    private function hasCompletedOwnerLifecycle(int $userId, ?int $ownerId, int $ignoredSubscriptionId): bool
+    {
+        return DB::table('subscriptions')
+            ->where('id', '!=', $ignoredSubscriptionId)
+            ->where(function ($query) use ($userId, $ownerId) {
+                $query->where('user_id', $userId);
+                if ($ownerId) {
+                    $query->orWhere('owner_id', $ownerId);
+                }
+            })
+            ->whereIn('status', ['active', 'expired'])
+            ->exists();
+    }
+
     public function expireSubscriptionAndOwner(int $subscriptionId): bool
     {
         $subscription = DB::table('subscriptions')->where('id', $subscriptionId)->first();

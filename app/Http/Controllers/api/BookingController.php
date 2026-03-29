@@ -23,7 +23,8 @@ class BookingController extends Controller
             $propertyId = $request->property_id;
             $userId = Auth::id();
 
-            $isOwner = DB::table("owners")->where("user_id", $userId)->exists();
+            $user = Auth::user();
+            $isOwner = strtolower((string) ($user?->role ?? '')) === 'owner';
             if ($isOwner) {
                 return response()->json(["error" => "Owners cannot book properties."], 403);
             }

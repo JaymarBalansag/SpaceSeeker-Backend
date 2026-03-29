@@ -113,6 +113,42 @@ class SubscriptionController extends Controller
         }
     }
 
+
+    public function cancelPendingSubscription(int $subscriptionId)
+    {
+        try {
+            $subscription = DB::table('subscriptions')
+                ->where('id', $subscriptionId)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if (!$subscription) {
+                return response()->json([
+                    'message' => 'Pending subscription not found for this user.',
+                ], 404);
+            }
+
+            $result = $this->subscriptionLifecycleService->resolvePendingSubscriptionAttempt($subscriptionId, 'cancelled');
+
+            if (($result['previous_status'] ?? null) !== 'pending') {
+                return response()->json([
+                    'message' => 'Only pending subscriptions can be cancelled.',
+                    'data' => $result,
+                ], 422);
+            }
+
+            return response()->json([
+                'message' => 'Pending subscription cancelled successfully.',
+                'data' => $result,
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'message' => 'Server Error',
+                'error' => $th->getMessage(),
+            ], 500);
+        }
+    }
+
     public function getOwnerSubscriptionHistory()
     {
         try {
