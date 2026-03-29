@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\TenantsController;
 use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PropertyController;
+use App\Http\Controllers\Api\PropertyReportController;
 use App\Http\Controllers\Api\RecommendedController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\OwnerReportController;
@@ -28,6 +29,7 @@ use App\Http\Controllers\Api\Admin\InquiryController as AdminInquiryController;
 use App\Http\Controllers\Api\Admin\Owner\OwnerController as AdminOwnerController;
 use App\Http\Controllers\Api\Admin\Property\PropertyController as AdminPropertyController;
 use App\Http\Controllers\Api\Admin\Booking\BookingController as AdminBookingController;
+use App\Http\Controllers\Api\Admin\Report\PropertyReportController as AdminPropertyReportController;
 use App\Http\Controllers\Api\EmailVerificationController;
 
 Route::get('/email/verify/{id}/{hash}', function (Request $request, $id, $hash) {
@@ -162,6 +164,10 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
 
     Route::controller(PropertyController::class)->group(function() {
         Route::post('/properties/{id}/reviews', 'submitPropertyReview');
+    });
+
+    Route::controller(PropertyReportController::class)->group(function() {
+        Route::post('/properties/{id}/reports', 'store');
     });
 
     Route::controller(MessageController::class)->group(function() {
@@ -311,5 +317,11 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::delete('/admin/inquiries', 'destroyMany');
         Route::get('/admin/inquiries/{id}', 'show');
         Route::patch('/admin/inquiries/{id}/resolve', 'resolve');
+    });
+
+    Route::controller(AdminPropertyReportController::class)->group(function() {
+        Route::get('/admin/property-reports', 'index');
+        Route::get('/admin/property-reports/{id}', 'show');
+        Route::patch('/admin/property-reports/{id}', 'update');
     });
 });
