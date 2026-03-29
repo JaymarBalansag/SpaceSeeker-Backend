@@ -122,6 +122,7 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
         Route::get("/subscription-status/{subscriptionId}", "getSubscriptionStatus");
         Route::get("/owner/subscription-status", "getOwnerSubscriptionStatus");
         Route::get("/owner/subscription-history", "getOwnerSubscriptionHistory");
+        Route::post("/subscriptions/{subscriptionId}/cancel-pending", "cancelPendingSubscription");
     });
 
     Route::get("/me", function(Request $request){
@@ -236,6 +237,7 @@ Route::middleware(["auth:sanctum", "is_owner", "verified", "user_verified"])->gr
         Route::post('/owner/listing-addon/intent', 'createListingAddonIntent');
         Route::get('/owner/listing-addon/status/{addonId}', 'getListingAddonStatus');
         Route::post('/paymongo/renew-payment', 'createRenewalPayment');
+        Route::post('/paymongo/plan-change-payment', 'createPlanChangePayment');
     });
 
     Route::controller(BookingController::class)->group(function(){
