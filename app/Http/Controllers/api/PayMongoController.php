@@ -91,8 +91,6 @@ class PayMongoController extends Controller
 
         $request->validate([
             'plan' => 'required|in:Monthly,Annual',
-            'paymentType' => "required|string",
-            'phone' => 'required|string',
             'permit_acknowledged' => 'required|accepted',
         ]);
 
@@ -107,8 +105,6 @@ class PayMongoController extends Controller
             DB::beginTransaction();
 
             $ownerData = [
-                'paymentType' => $request->paymentType,
-                'phone_number' => $request->phone,
                 'status' => 'pending', // Not yet an active owner
                 'permit_compliance_acknowledged' => true,
                 'permit_compliance_acknowledged_at' => now(),
@@ -279,8 +275,6 @@ class PayMongoController extends Controller
 
         $request->validate([
             'plan' => 'required|in:Monthly,Annual',
-            'paymentType' => "required|string",
-            'phone' => 'required|string',
             'permit_acknowledged' => 'required|accepted',
         ]);
 
@@ -439,8 +433,6 @@ class PayMongoController extends Controller
 
         $request->validate([
             'plan' => 'required|in:Monthly,Annual',
-            'paymentType' => 'required|string',
-            'phone' => 'required|string',
             'permit_acknowledged' => 'required|accepted',
             'change_acknowledged' => 'required|accepted',
         ]);
