@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PropertyReportController;
+use App\Http\Controllers\Api\PropertyBookmarkController;
 use App\Http\Controllers\Api\RecommendedController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\OwnerReportController;
@@ -168,6 +169,13 @@ Route::middleware(["auth:sanctum", "verified"])->group(function(){
 
     Route::controller(PropertyReportController::class)->group(function() {
         Route::post('/properties/{id}/reports', 'store');
+    });
+
+    Route::controller(PropertyBookmarkController::class)->group(function() {
+        Route::get('/bookmarks', 'index');
+        Route::get('/bookmarks/property-ids', 'bookmarkedPropertyIds');
+        Route::post('/properties/{id}/bookmark', 'store');
+        Route::delete('/properties/{id}/bookmark', 'destroy');
     });
 
     Route::controller(MessageController::class)->group(function() {
@@ -325,3 +333,4 @@ Route::middleware(["auth:sanctum", "is_admin", "verified"])->group(function() {
         Route::patch('/admin/property-reports/{id}', 'update');
     });
 });
+
