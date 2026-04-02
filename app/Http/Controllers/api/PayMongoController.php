@@ -64,13 +64,108 @@ class PayMongoController extends Controller
         return [$owner, $snapshot];
     }
 
-    private function getPlanPricing(string $plan): array
+    private function normalizeStoredOwnerPlanCode(?string $planName, ?string $billingCycle = null): string
     {
-        if ($plan === 'Monthly') {
-            return [1, 'monthly', 2];
+        $plan = strtolower(trim((string) $planName));
+        $cycle = strtolower(trim((string) $billingCycle));
+
+        if (in_array($plan, ['monthly_standard', 'annual_standard', 'monthly_pro', 'annual_pro'], true)) {
+            return $plan;
         }
 
-        return [1, 'annual', 5];
+        if ($plan === 'monthly') {
+            return 'monthly_standard';
+        }
+
+        if ($plan === 'annual') {
+            return 'annual_pro';
+        }
+
+        $isPro = str_contains($plan, 'pro');
+        $isStandard = str_contains($plan, 'standard') || str_contains($plan, 'starter');
+        $resolvedCycle = $cycle ?: (str_contains($plan, 'annual') ? 'annual' : (str_contains($plan, 'monthly') ? 'monthly' : ''));
+
+        if ($resolvedCycle === 'annual') {
+            if ($isPro) {
+                return 'annual_pro';
+            }
+            if ($isStandard) {
+                return 'annual_standard';
+            }
+        }
+
+        if ($resolvedCycle === 'monthly') {
+            if ($isPro) {
+                return 'monthly_pro';
+            }
+            return 'monthly_standard';
+        }
+
+        return $isPro ? 'annual_pro' : 'monthly_standard';
+    }
+
+    private function getPlanPricing(string $planInput): ?array
+    {
+        $raw = strtolower(trim($planInput));
+
+        $aliases = [
+            'monthly_standard' => 'monthly_standard',
+            'annual_standard' => 'annual_standard',
+            'monthly_pro' => 'monthly_pro',
+            'annual_pro' => 'annual_pro',
+            'monthly standard' => 'monthly_standard',
+            'annual standard' => 'annual_standard',
+            'monthly pro' => 'monthly_pro',
+            'annual pro' => 'annual_pro',
+            'monthly' => 'monthly_standard',
+            'annual' => 'annual_pro',
+        ];
+
+        $code = $aliases[$raw] ?? null;
+        if (!$code) {
+            return null;
+        }
+
+        $catalog = [
+            'monthly_standard' => [
+                'code' => 'monthly_standard',
+                'name' => 'Monthly Standard',
+                'display_amount' => 200,
+                'charge_amount' => 1,
+                'billing_cycle' => 'monthly',
+                'listing_limit' => 2,
+                'tier' => 'standard',
+            ],
+            'annual_standard' => [
+                'code' => 'annual_standard',
+                'name' => 'Annual Standard',
+                'display_amount' => 1800,
+                'charge_amount' => 1,
+                'billing_cycle' => 'annual',
+                'listing_limit' => 2,
+                'tier' => 'standard',
+            ],
+            'monthly_pro' => [
+                'code' => 'monthly_pro',
+                'name' => 'Monthly Pro',
+                'display_amount' => 500,
+                'charge_amount' => 1,
+                'billing_cycle' => 'monthly',
+                'listing_limit' => 5,
+                'tier' => 'pro',
+            ],
+            'annual_pro' => [
+                'code' => 'annual_pro',
+                'name' => 'Annual Pro',
+                'display_amount' => 4800,
+                'charge_amount' => 1,
+                'billing_cycle' => 'annual',
+                'listing_limit' => 5,
+                'tier' => 'pro',
+            ],
+        ];
+
+        return $catalog[$code] ?? null;
     }
 
 
@@ -113,12 +208,16 @@ class PayMongoController extends Controller
         }
 
         $request->validate([
-            'plan' => 'required|in:Monthly,Annual',
+            'plan' => 'required|string',
             'permit_acknowledged' => 'required|accepted',
         ]);
 
         // 1. Calculate Plan Details
-        [$amount, $billing, $listingLimit] = $this->getPlanPricing($request->plan);
+        $planDefinition = $this->getPlanPricing((string) $request->plan);
+
+        if (!$planDefinition) {
+            return response()->json(['message' => 'Invalid owner plan selected.'], 422);
+        }
 
         $existingOwner = DB::table('owners')->where('user_id', $user->id)->first();
 
@@ -148,10 +247,10 @@ class PayMongoController extends Controller
 
             $subscriptionId = DB::table('subscriptions')->insertGetId([
                 'user_id' => $user->id,
-                'plan_name' => $request->plan,
-                'amount' => $amount,
-                'billing_cycle' => $billing,
-                'listing_limit' => $listingLimit,
+                'plan_name' => $planDefinition['name'],
+                'amount' => $planDefinition['display_amount'],
+                'billing_cycle' => $planDefinition['billing_cycle'],
+                'listing_limit' => $planDefinition['listing_limit'],
                 'start_date' => Carbon::now(),
                 'payment_provider' => 'paymongo',
                 'payment_method' => 'qrph',
@@ -176,7 +275,7 @@ class PayMongoController extends Controller
         ->post('https://api.paymongo.com/v1/payment_intents', [
             'data' => [
                 'attributes' => [
-                    'amount' => $amount * 100,
+                    'amount' => $planDefinition['charge_amount'] * 100,
                     'payment_method_allowed' => ['qrph'],
                     'currency' => 'PHP',
                     'description' => $subscriptionId, // Help track which ID this is
@@ -243,7 +342,7 @@ class PayMongoController extends Controller
             'data' => [
                 'attributes' => [
                     'payment_method' => $paymentMethodId,
-                    'return_url' => rtrim(config('app.frontend_url'), '/') . '/subscription/renew'
+                    'return_url' => rtrim(config('app.frontend_url'), '/') . '/payment/details?plan=' . $planDefinition['code']
                 ]
             ]
         ]);
@@ -282,11 +381,15 @@ class PayMongoController extends Controller
         }
 
         $request->validate([
-            'plan' => 'required|in:Monthly,Annual',
+            'plan' => 'required|string',
             'permit_acknowledged' => 'required|accepted',
         ]);
 
-        [$amount, $billing, $listingLimit] = $this->getPlanPricing($request->plan);
+        $planDefinition = $this->getPlanPricing((string) $request->plan);
+
+        if (!$planDefinition) {
+            return response()->json(['message' => 'Invalid owner plan selected.'], 422);
+        }
 
         $owner = DB::table('owners')->where('user_id', $user->id)->first();
         if (!$owner) {
@@ -299,10 +402,10 @@ class PayMongoController extends Controller
             $subscriptionId = DB::table('subscriptions')->insertGetId([
                 'user_id' => $user->id,
                 'owner_id' => $owner->id,
-                'plan_name' => $request->plan,
-                'amount' => $amount,
-                'billing_cycle' => $billing,
-                'listing_limit' => $listingLimit,
+                'plan_name' => $planDefinition['name'],
+                'amount' => $planDefinition['display_amount'],
+                'billing_cycle' => $planDefinition['billing_cycle'],
+                'listing_limit' => $planDefinition['listing_limit'],
                 'start_date' => Carbon::now(),
                 'payment_provider' => 'paymongo',
                 'payment_method' => 'qrph',
@@ -321,7 +424,7 @@ class PayMongoController extends Controller
         ->post('https://api.paymongo.com/v1/payment_intents', [
             'data' => [
                 'attributes' => [
-                    'amount' => $amount * 100,
+                    'amount' => $planDefinition['charge_amount'] * 100,
                     'payment_method_allowed' => ['qrph'],
                     'currency' => 'PHP',
                     'description' => $subscriptionId,
@@ -388,7 +491,7 @@ class PayMongoController extends Controller
             'data' => [
                 'attributes' => [
                     'payment_method' => $paymentMethodId,
-                    'return_url' => rtrim(config('app.frontend_url'), '/') . '/subscription/renew'
+                    'return_url' => rtrim(config('app.frontend_url'), '/') . '/subscription/renew?plan=' . $planDefinition['code']
                 ]
             ]
         ]);
@@ -425,7 +528,7 @@ class PayMongoController extends Controller
         }
 
         $request->validate([
-            'plan' => 'required|in:Monthly,Annual',
+            'plan' => 'required|string',
             'permit_acknowledged' => 'required|accepted',
             'change_acknowledged' => 'required|accepted',
         ]);
@@ -436,11 +539,15 @@ class PayMongoController extends Controller
             throw $e;
         }
 
-        $currentCycle = strtolower((string) ($snapshot['billing_cycle'] ?? ''));
+        $currentPlanCode = $this->normalizeStoredOwnerPlanCode((string) ($snapshot['plan_code'] ?? $snapshot['plan_name'] ?? ''), (string) ($snapshot['billing_cycle'] ?? ''));
         $requestedPlan = $request->plan;
-        $requestedCycle = $requestedPlan === 'Annual' ? 'annual' : 'monthly';
+        $planDefinition = $this->getPlanPricing((string) $requestedPlan);
 
-        if ($requestedCycle === $currentCycle) {
+        if (!$planDefinition) {
+            return response()->json(['message' => 'Invalid owner plan selected.'], 422);
+        }
+
+        if ($planDefinition['code'] === $currentPlanCode) {
             return response()->json(['message' => 'Select a different plan to continue.'], 422);
         }
 
@@ -450,18 +557,16 @@ class PayMongoController extends Controller
             ], 422);
         }
 
-        [$amount, $billing, $listingLimit] = $this->getPlanPricing($requestedPlan);
-
         try {
             DB::beginTransaction();
 
             $subscriptionId = DB::table('subscriptions')->insertGetId([
                 'user_id' => $user->id,
                 'owner_id' => $owner->id,
-                'plan_name' => $requestedPlan,
-                'amount' => $amount,
-                'billing_cycle' => $billing,
-                'listing_limit' => $listingLimit,
+                'plan_name' => $planDefinition['name'],
+                'amount' => $planDefinition['display_amount'],
+                'billing_cycle' => $planDefinition['billing_cycle'],
+                'listing_limit' => $planDefinition['listing_limit'],
                 'start_date' => Carbon::now(),
                 'payment_provider' => 'paymongo',
                 'payment_method' => 'qrph',
@@ -480,7 +585,7 @@ class PayMongoController extends Controller
             ->post('https://api.paymongo.com/v1/payment_intents', [
                 'data' => [
                     'attributes' => [
-                        'amount' => $amount * 100,
+                        'amount' => $planDefinition['charge_amount'] * 100,
                         'payment_method_allowed' => ['qrph'],
                         'currency' => 'PHP',
                         'description' => $subscriptionId,
@@ -547,7 +652,7 @@ class PayMongoController extends Controller
                 'data' => [
                     'attributes' => [
                         'payment_method' => $paymentMethodId,
-                        'return_url' => rtrim(config('app.frontend_url'), '/') . '/subscription/change?plan=' . strtolower($billing),
+                        'return_url' => rtrim(config('app.frontend_url'), '/') . '/subscription/change?plan=' . $planDefinition['code'],
                     ]
                 ]
             ]);
@@ -864,8 +969,11 @@ class PayMongoController extends Controller
                             ->orderByDesc('id')
                             ->first();
 
-                        $isPlanChange = $targetSubscription
-                            && strtolower((string) $targetSubscription->billing_cycle) !== strtolower((string) $sub->billing_cycle);
+                        $currentTargetPlanCode = $targetSubscription
+                            ? $this->normalizeStoredOwnerPlanCode($targetSubscription->plan_name ?? null, $targetSubscription->billing_cycle ?? null)
+                            : null;
+                        $incomingPlanCode = $this->normalizeStoredOwnerPlanCode($sub->plan_name ?? null, $sub->billing_cycle ?? null);
+                        $isPlanChange = $targetSubscription && $currentTargetPlanCode !== $incomingPlanCode;
 
                         $periodStart = $today;
                         if (!$isPlanChange && $targetSubscription && $targetSubscription->status === 'active' && $targetSubscription->end_date) {

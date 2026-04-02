@@ -78,6 +78,38 @@ class PropertyController extends Controller
         return array_values(array_filter(array_map('intval', explode(',', (string) $value)), fn ($v) => $v > 0));
     }
 
+
+    private function normalizeOwnerPlanCode(?string $planName, ?string $billingCycle = null): string
+    {
+        $plan = strtolower(trim((string) $planName));
+        $cycle = strtolower(trim((string) $billingCycle));
+
+        if (in_array($plan, ['monthly_standard', 'annual_standard', 'monthly_pro', 'annual_pro'], true)) {
+            return $plan;
+        }
+
+        if ($plan === 'monthly') {
+            return 'monthly_standard';
+        }
+
+        if ($plan === 'annual') {
+            return 'annual_pro';
+        }
+
+        $isPro = str_contains($plan, 'pro');
+        $resolvedCycle = $cycle ?: (str_contains($plan, 'annual') ? 'annual' : 'monthly');
+
+        if ($resolvedCycle === 'annual') {
+            return $isPro ? 'annual_pro' : 'annual_standard';
+        }
+
+        return $isPro ? 'monthly_pro' : 'monthly_standard';
+    }
+
+    private function ownerPlanHasProFeatures(?string $planName, ?string $billingCycle = null): bool
+    {
+        return str_contains($this->normalizeOwnerPlanCode($planName, $billingCycle), '_pro');
+    }
     private function attachPropertyFeatureChips($properties, array $selectedAmenityIds = [], array $selectedFacilityIds = []): void
     {
         $propertyIds = collect($properties)->pluck('id')->filter()->values()->all();
@@ -395,12 +427,12 @@ class PropertyController extends Controller
                     ")
                 )
                 ->where("properties.status", "active")
-                ->paginate(4); // ✅ pagination here
+                ->paginate(4); // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ pagination here
 
             $this->attachPropertyFeatureChips($properties->getCollection());
 
 
-            // ❗ paginate() never returns empty collection directly
+            // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â paginate() never returns empty collection directly
             if ($properties->total() === 0) {
                 return response()->json([
                     "message" => "Please add a property",
@@ -446,13 +478,13 @@ class PropertyController extends Controller
                 ->where('id', $property->owner_id)
                 ->value('user_id'); // just get the user_id
 
-            // If current user is the owner → ignore
+            // If current user is the owner ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ ignore
             if ($ownerUserId == $userId) {
                 return response()->json(['ignored' => true]);
             }
         }
 
-        // Guest or non-owner → increment views
+        // Guest or non-owner ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ increment views
         DB::table('properties')
             ->where('id', $propertyId)
             ->increment('views');
@@ -641,7 +673,7 @@ class PropertyController extends Controller
                 ->join('users', 'owners.user_id', '=', 'users.id')
                 ->leftJoinSub(
                     DB::table('subscriptions')
-                        ->select('subscriptions.owner_id', 'subscriptions.billing_cycle')
+                        ->select('subscriptions.owner_id', 'subscriptions.billing_cycle', 'subscriptions.plan_name')
                         ->where('subscriptions.status', 'active')
                         ->whereDate('subscriptions.end_date', '>=', now()->toDateString()),
                     'active_subscription',
@@ -659,6 +691,7 @@ class PropertyController extends Controller
                     'users.last_name as owner_last_name',
                     'owners.owner_verification_status',
                     'active_subscription.billing_cycle as owner_billing_cycle',
+                    'active_subscription.plan_name as owner_plan_name',
                     DB::raw('COALESCE(review_summary.average_rating, 0) as average_rating'),
                     DB::raw('COALESCE(review_summary.total_reviews, 0) as total_reviews'),
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img"),
@@ -755,7 +788,8 @@ class PropertyController extends Controller
                     'status' => $property->status,
                     'is_available' => (bool) $property->is_available,
                     'owner_billing_cycle' => $property->owner_billing_cycle,
-                    'accepts_bookings' => strtolower((string) $property->owner_billing_cycle) === 'annual',
+                    'owner_plan_name' => $property->owner_plan_name,
+                    'accepts_bookings' => $this->ownerPlanHasProFeatures($property->owner_plan_name, $property->owner_billing_cycle),
                     'region_name' => $property->region_name,
                     'state_name' => $property->state_name,
                     'town_name' => $property->town_name,
@@ -1089,7 +1123,7 @@ class PropertyController extends Controller
             if ($request->has("selectedType") && !empty($request->selectedType)) {
                 $types = (array) $request->selectedType;
                 $query->join('property_types', 'properties.property_type_id', '=', 'property_types.id')
-                    ->whereIn('property_types.id', $types); // ✅ remove "="
+                    ->whereIn('property_types.id', $types); // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ remove "="
             }
 
             if ($request->has("selectedAgreement") && !empty($request->selectedAgreement)) {
