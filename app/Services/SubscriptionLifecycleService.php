@@ -8,6 +8,84 @@ use Illuminate\Support\Facades\Log;
 
 class SubscriptionLifecycleService
 {
+    private function normalizePlanCode(?string $planName, ?string $billingCycle = null): string
+    {
+        $plan = strtolower(trim((string) $planName));
+        $cycle = strtolower(trim((string) $billingCycle));
+
+        if (in_array($plan, ['monthly_standard', 'annual_standard', 'monthly_pro', 'annual_pro'], true)) {
+            return $plan;
+        }
+
+        if ($plan === 'monthly') {
+            return 'monthly_standard';
+        }
+
+        if ($plan === 'annual') {
+            return 'annual_pro';
+        }
+
+        $isPro = str_contains($plan, 'pro');
+        $isStandard = str_contains($plan, 'standard') || str_contains($plan, 'starter');
+        $resolvedCycle = $cycle ?: (str_contains($plan, 'annual') ? 'annual' : (str_contains($plan, 'monthly') ? 'monthly' : ''));
+
+        if ($resolvedCycle === 'annual') {
+            if ($isPro) {
+                return 'annual_pro';
+            }
+            if ($isStandard) {
+                return 'annual_standard';
+            }
+        }
+
+        if ($resolvedCycle === 'monthly') {
+            if ($isPro) {
+                return 'monthly_pro';
+            }
+            return 'monthly_standard';
+        }
+
+        return $isPro ? 'annual_pro' : 'monthly_standard';
+    }
+
+    private function getPlanMetadata(?string $planName, ?string $billingCycle = null): array
+    {
+        $code = $this->normalizePlanCode($planName, $billingCycle);
+
+        $catalog = [
+            'monthly_standard' => [
+                'code' => 'monthly_standard',
+                'name' => 'Monthly Standard',
+                'tier' => 'standard',
+                'billing_cycle' => 'monthly',
+                'listing_limit' => 2,
+            ],
+            'annual_standard' => [
+                'code' => 'annual_standard',
+                'name' => 'Annual Standard',
+                'tier' => 'standard',
+                'billing_cycle' => 'annual',
+                'listing_limit' => 2,
+            ],
+            'monthly_pro' => [
+                'code' => 'monthly_pro',
+                'name' => 'Monthly Pro',
+                'tier' => 'pro',
+                'billing_cycle' => 'monthly',
+                'listing_limit' => 5,
+            ],
+            'annual_pro' => [
+                'code' => 'annual_pro',
+                'name' => 'Annual Pro',
+                'tier' => 'pro',
+                'billing_cycle' => 'annual',
+                'listing_limit' => 5,
+            ],
+        ];
+
+        return $catalog[$code] ?? $catalog['monthly_standard'];
+    }
+
     public function syncStatuses(int $warningDays = 7): array
     {
         $now = now();
@@ -51,18 +129,22 @@ class SubscriptionLifecycleService
             'expired_processed' => $expiredCount,
         ];
     }
+
     public function getOwnerSubscriptionSnapshotByUserId(int $userId, int $warningDays = 7): array
     {
         $owner = DB::table('owners')->where('user_id', $userId)->first();
         if (!$owner) {
             return [
                 'can_manage_properties' => false,
+                'can_access_pro_features' => false,
                 'status' => 'none',
                 'owner_verification_status' => 'unverified',
                 'owner_verified_at' => null,
                 'listing_limit' => null,
                 'amount' => null,
                 'start_date' => null,
+                'plan_code' => null,
+                'plan_tier' => null,
                 'message' => 'Owner profile not found.',
             ];
         }
@@ -79,17 +161,19 @@ class SubscriptionLifecycleService
         if (!$subscription) {
             return [
                 'can_manage_properties' => false,
+                'can_access_pro_features' => false,
                 'status' => 'none',
                 'owner_verification_status' => $owner->owner_verification_status ?? 'unverified',
                 'owner_verified_at' => $owner->owner_verified_at ?? null,
                 'listing_limit' => null,
                 'amount' => null,
                 'start_date' => null,
+                'plan_code' => null,
+                'plan_tier' => null,
                 'message' => 'No subscription found.',
             ];
         }
 
-        // Defensive expiry in case scheduler has not run yet.
         if ($subscription->status === 'active' && $subscription->end_date && Carbon::parse($subscription->end_date)->startOfDay()->lte(now()->startOfDay())) {
             Log::info('Subscription expired on-demand during status fetch.', [
                 'subscription_id' => $subscription->id,
@@ -101,6 +185,7 @@ class SubscriptionLifecycleService
             $subscription = DB::table('subscriptions')->where('id', $subscription->id)->first();
         }
 
+        $plan = $this->getPlanMetadata($subscription->plan_name, $subscription->billing_cycle);
         $daysLeft = null;
         $isExpiringSoon = false;
         if ($subscription->end_date) {
@@ -111,11 +196,15 @@ class SubscriptionLifecycleService
         $canChangePlan = in_array($subscription->status, ['active', 'expired'], true)
             && ($subscription->status === 'expired' || ($daysLeft !== null && $daysLeft <= $warningDays));
 
+        $hasProFeatures = $plan['tier'] === 'pro';
+
         return [
             'subscription_id' => $subscription->id,
             'status' => $subscription->status,
-            'plan_name' => $subscription->plan_name,
-            'billing_cycle' => $subscription->billing_cycle,
+            'plan_name' => $plan['name'],
+            'plan_code' => $plan['code'],
+            'plan_tier' => $plan['tier'],
+            'billing_cycle' => $plan['billing_cycle'],
             'amount' => $subscription->amount,
             'start_date' => $subscription->start_date,
             'listing_limit' => $subscription->listing_limit,
@@ -123,6 +212,7 @@ class SubscriptionLifecycleService
             'days_left' => $daysLeft,
             'is_expiring_soon' => $isExpiringSoon,
             'can_manage_properties' => $subscription->status === 'active',
+            'can_access_pro_features' => $subscription->status === 'active' && $hasProFeatures,
             'can_change_plan' => $canChangePlan,
             'plan_change_window_days' => $warningDays,
             'plan_change_message' => $canChangePlan
@@ -136,7 +226,6 @@ class SubscriptionLifecycleService
                 : 'Subscription is not active.',
         ];
     }
-
 
     public function resolvePendingSubscriptionAttempt(int $subscriptionId, string $finalStatus = 'cancelled'): array
     {
@@ -254,14 +343,3 @@ class SubscriptionLifecycleService
         return true;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
