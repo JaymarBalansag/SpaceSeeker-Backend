@@ -19,6 +19,10 @@ class PropertyTypeSeeder extends Seeder
             ['type_name' => 'Condo'],
             ['type_name' => 'House'],
             ['type_name' => 'Commercial Space'],
+            ['type_name' => 'Lodge'],
+            ['type_name' => 'Dormitory'],
+            ['type_name' => 'Hotel'],
+            ['type_name' => 'Resort'],
         ]);
     }
 }

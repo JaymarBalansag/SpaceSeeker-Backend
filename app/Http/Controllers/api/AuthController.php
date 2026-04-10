@@ -82,7 +82,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'message' => 'User registered successfully',
-                "userID" => $userId
+                "userId" => $userId
             ], 200);
             
         } catch (\Throwable $th) {
