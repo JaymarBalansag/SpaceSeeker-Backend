@@ -8,6 +8,7 @@ use App\Services\PropertyService;
 use App\Services\NotificationService;
 use App\Services\SubscriptionLifecycleService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
 use App\Observers\Notifications\Logic\NotificationLogicObserver;
@@ -20,6 +21,8 @@ use App\Http\Requests\isSubscribingRequest;
 
 class PropertyController extends Controller
 {
+    private const LOOKUP_CACHE_TTL_MINUTES = 10;
+
     protected PropertyService $propertyService;
     protected SubscriptionLifecycleService $subscriptionLifecycleService;
     protected NotificationService $notificationService;
@@ -256,21 +259,36 @@ class PropertyController extends Controller
     }
 
     public function getAmenities(){
-        $amenities = DB::table("amenities")->get();
+        $amenities = Cache::remember(
+            "lookup.amenities.all",
+            now()->addMinutes(self::LOOKUP_CACHE_TTL_MINUTES),
+            fn () => DB::table("amenities")->get()
+        );
+
         return response()->json([
             "amenities" => $amenities
         ], 200);
     }
 
     public function getFacilities(){
-        $facilities = DB::table("facilities")->get();
+        $facilities = Cache::remember(
+            "lookup.facilities.all",
+            now()->addMinutes(self::LOOKUP_CACHE_TTL_MINUTES),
+            fn () => DB::table("facilities")->get()
+        );
+
         return response()->json([
             "facilities" => $facilities
         ], 200);
     }
 
     public function getPropertyTypes(){
-        $types = DB::table("property_types")->get();
+        $types = Cache::remember(
+            "lookup.property_types.all",
+            now()->addMinutes(self::LOOKUP_CACHE_TTL_MINUTES),
+            fn () => DB::table("property_types")->get()
+        );
+
         return response()->json([
             "types" => $types
         ],200);
@@ -1462,4 +1480,3 @@ class PropertyController extends Controller
 
 
 }
-
