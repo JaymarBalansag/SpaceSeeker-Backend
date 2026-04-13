@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use App\Http\Requests\AuthRequest;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use App\Http\Requests\RegisterRequest;
 use Illuminate\Support\Facades\Cookie;
 
@@ -33,7 +34,7 @@ class AuthController extends Controller
             'access_token' => $tokens['access_token'],
             'token_type' => 'Bearer',
             'expires_in' => 900, // 15 mins
-            'user' => $user
+            'user' => $this->loadAuthUserPayload($user->id),
         ])->cookie($tokens['cookie']);
     }
 
@@ -81,7 +82,7 @@ class AuthController extends Controller
 
             return response()->json([
                 'message' => 'User registered successfully',
-                "userID" => $userId
+                "userId" => $userId
             ], 200);
             
         } catch (\Throwable $th) {
@@ -122,5 +123,20 @@ class AuthController extends Controller
             'refresh_token' => $refreshToken,
             'cookie' => $cookie,
         ];
+    }
+
+    private function loadAuthUserPayload(int $userId)
+    {
+        return DB::table("users")
+            ->leftJoin("owners", "owners.user_id", "=", "users.id")
+            ->select(
+                "users.*",
+                "owners.owner_verification_status",
+                "owners.owner_verified_at",
+                DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img_url"),
+                DB::raw("CASE WHEN users.user_valid_govt_id_path IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_valid_govt_id_path) ELSE NULL END as user_valid_govt_id_url")
+            )
+            ->where("users.id", "=", $userId)
+            ->first();
     }
 }
