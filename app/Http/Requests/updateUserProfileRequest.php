@@ -25,7 +25,7 @@ class updateUserProfileRequest extends FormRequest
             'first_name'   => 'nullable|string|max:100',
             'last_name'    => 'nullable|string|max:100',
             'phone_number' => 'nullable|string|max:20',
-            'user_img'     => 'nullable|image|mimes:jpg,jpeg,png',
+            'user_img'     => 'nullable|image|mimes:jpg,jpeg,png,webp',
         ];
     }
 }
