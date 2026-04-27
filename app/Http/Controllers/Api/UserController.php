@@ -224,7 +224,7 @@ class UserController extends Controller
             }
 
             $request->validate([
-                'valid_id' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+                'valid_id' => 'required|file|mimes:jpg,jpeg,png,webp|max:5120',
             ]);
 
             $oldPath = DB::table("users")
