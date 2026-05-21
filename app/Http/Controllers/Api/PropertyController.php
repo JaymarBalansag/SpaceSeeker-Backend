@@ -895,7 +895,6 @@ class PropertyController extends Controller
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img")
                 )
                 ->where('property_reviews.property_id', $id)
-                ->where('properties.is_available', true)
                 ->orderByDesc('property_reviews.created_at')
                 ->get();
 
