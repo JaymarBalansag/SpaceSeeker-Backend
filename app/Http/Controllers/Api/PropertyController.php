@@ -443,14 +443,13 @@ class PropertyController extends Controller
                             ELSE NULL 
                         END as image_url
                     ")
-                )
-                ->where("properties.status", "active")
-                ->paginate(4); // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ pagination here
+                ) 
+                ->whereIn('properties.status', ['active','pending'])
+                ->where('properties.is_available', true)
+                ->paginate(4);
 
             $this->attachPropertyFeatureChips($properties->getCollection());
 
-
-            // ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â paginate() never returns empty collection directly
             if ($properties->total() === 0) {
                 return response()->json([
                     "message" => "Please add a property",
@@ -718,6 +717,8 @@ class PropertyController extends Controller
                     DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url")
                 )
                 ->where('properties.id', $id)
+                ->where('properties.is_available', true)
+                ->whereIn('properties.status', ['active','pending'])
                 ->orderByDesc('properties.id')
                 ->first();
 
@@ -850,7 +851,8 @@ class PropertyController extends Controller
             DB::raw("CASE WHEN properties.thumbnail IS NOT NULL THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) ELSE NULL END as image_url"))
             ->where("properties.property_type_id", "=", $type_id,)
             ->where("properties.id", "!=", $property_id)
-            ->where("properties.status", "=", "active")
+            ->whereIn('properties.status', ['active','pending'])
+            ->where('properties.is_available', true)
             ->get();
 
             if (!$property) {
@@ -893,6 +895,7 @@ class PropertyController extends Controller
                     DB::raw("CASE WHEN users.user_img IS NOT NULL THEN CONCAT('" . asset('storage') . "/', users.user_img) ELSE NULL END as user_img")
                 )
                 ->where('property_reviews.property_id', $id)
+                ->where('properties.is_available', true)
                 ->orderByDesc('property_reviews.created_at')
                 ->get();
 
@@ -1049,7 +1052,8 @@ class PropertyController extends Controller
                             THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
                             ELSE NULL END as image_url")
                 )
-                ->where("properties.status", "=", "active");
+                ->whereIn('properties.status', ['active','pending'])
+                ->where('properties.is_available', true);
 
             // 1. Filter by Amenities (using subquery to avoid row duplication)
             if (!empty($selectedAmenityIds)) {
@@ -1135,7 +1139,8 @@ class PropertyController extends Controller
                             THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
                             ELSE NULL END as image_url")
                 )
-                ->where("properties.status", "=", "active")
+                ->whereIn('properties.status', ['active','pending'])
+                ->where('properties.is_available', true)
                 ->distinct();
 
             if ($request->has("selectedType") && !empty($request->selectedType)) {
@@ -1199,7 +1204,8 @@ class PropertyController extends Controller
                             THEN CONCAT('" . asset('storage') . "/', properties.thumbnail) 
                             ELSE NULL END as image_url")
                 )
-                ->where('properties.status', 'active');
+                ->whereIn('properties.status', ['active','pending'])
+                ->where('properties.is_available', true);
 
             $query->where(function ($q) use ($search) {
                 $q->where('properties.title', 'LIKE', "%{$search}%")
