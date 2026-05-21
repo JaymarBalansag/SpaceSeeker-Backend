@@ -1062,16 +1062,16 @@ class PayMongoController extends Controller
                                 ->where('user_id', $user->id)
                                 ->update([
                                     'status' => 'active',
-                                    'owner_verification_status' => $owner->owner_verification_status === 'verified' ? 'verified' : 'pending',
-                                    'owner_verified_at' => $owner->owner_verification_status === 'verified' ? $owner->owner_verified_at : null,
+                                    'owner_verification_status' => 'verified',
+                                    'owner_verified_at' => now(),
                                     'updated_at' => now(),
                                 ]);
                         } else {
                             DB::table('owners')->insert([
                                 'user_id' => $user->id,
                                 'status' => 'active',
-                                'owner_verification_status' => 'pending',
-                                'owner_verified_at' => null,
+                                'owner_verification_status' => 'verified',
+                                'owner_verified_at' => now(),
                                 'created_at' => now(),
                                 'updated_at' => now(),
                             ]);
